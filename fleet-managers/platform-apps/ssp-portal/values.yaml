@@ -72,9 +72,9 @@ env:
   - name: BEDROCK_REGION
     value: "eu-west-1"
   - name: BEDROCK_MODEL_ID
-    # Haiku 3 — ON_DEMAND, no Anthropic use case form required. Demo gets real LLM output.
-    # Upgrade to eu.anthropic.claude-sonnet-4-6 after submitting the Anthropic form.
-    value: "anthropic.claude-3-haiku-20240307-v1:0"
+    # Haiku 4.5 via EU cross-region inference profile. Sonnet 4.6 needs the Anthropic
+    # use-case form submission first; Haiku 4.5 is already approved for this account.
+    value: "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
   - name: WORKFLOW_MODE
     value: "in-process"
   - name: COGNITO_REGION
