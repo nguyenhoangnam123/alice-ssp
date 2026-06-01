@@ -1,0 +1,57 @@
+# Helm values for opus-demo
+# Chart: fleet-managers/helm/app
+
+replicaCount: 2
+
+image:
+  repository: ""  # Populated by CI pipeline after ECR push
+  tag: ""
+  pullPolicy: IfNotPresent
+
+tenant:
+  id: "84b02a25117e4b7fbaa1983b64"
+  domain: "acme"
+  department: "growth"
+
+ssp:
+  serviceId: "01KT1VQWAFNFP2CZMBXWM5WZT9"
+  changeRequestId: "01KT1VQWAG390S12P380SG1AF0"
+
+route:
+  enabled: true
+  hostname: "opus.acme.ssp.mightybee.dev"
+  tls:
+    enabled: true
+
+service:
+  port: 3000
+  targetPort: 3000
+  protocol: TCP
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+securityContext:
+  runAsUser: 10000
+  runAsGroup: 10000
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+containerSecurityContext:
+  runAsUser: 10000
+  runAsGroup: 10000
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+podAnnotations:
+  ssp.mightybee.dev/service-id: "01KT1VQWAFNFP2CZMBXWM5WZT9"
+  ssp.mightybee.dev/tenant-id: "84b02a25117e4b7fbaa1983b64"
+
+vpnOnly: false
