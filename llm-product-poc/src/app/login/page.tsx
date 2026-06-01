@@ -3,6 +3,9 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { setStubSession } from "@/lib/auth/session";
 
+// Touches the DB — render at request time only.
+export const dynamic = "force-dynamic";
+
 async function stubLogin(formData: FormData) {
   "use server";
   const userId = String(formData.get("user_id") ?? "");
