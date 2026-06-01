@@ -236,3 +236,4 @@ ssp:
     summary: `Mock AI summary: scaffolded Dockerfile + GitHub Actions OIDC ECR push + Helm values for ${tenant.domain}/${service.name}.`,
   };
 }
+// cache-bust: 1780321705
