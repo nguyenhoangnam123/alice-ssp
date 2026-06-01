@@ -41,3 +41,41 @@ resource "kubectl_manifest" "portal_db_external_secret" {
   server_side_apply = true
   depends_on        = [kubernetes_namespace_v1.portal]
 }
+
+# GitHub PAT for Octokit — used by the AI workflow to open PRs against alice-ssp.
+# Secret created manually via:
+#   aws secretsmanager create-secret --name ssp/portal/github --kms-key-id alias/ssp-platform-secrets --secret-string '{"token":"<gh-token>"}'
+resource "kubectl_manifest" "portal_github_external_secret" {
+  yaml_body = yamlencode({
+    apiVersion = "external-secrets.io/v1beta1"
+    kind       = "ExternalSecret"
+    metadata = {
+      name      = "portal-github"
+      namespace = kubernetes_namespace_v1.portal.metadata[0].name
+    }
+    spec = {
+      refreshInterval = "1h"
+      secretStoreRef = {
+        name = "aws-secretsmanager"
+        kind = "ClusterSecretStore"
+      }
+      target = {
+        name           = "portal-github"
+        creationPolicy = "Owner"
+        template = {
+          engineVersion = "v2"
+          data = {
+            GITHUB_TOKEN = "{{ .token }}"
+          }
+        }
+      }
+      dataFrom = [{
+        extract = {
+          key = "ssp/portal/github"
+        }
+      }]
+    }
+  })
+  server_side_apply = true
+  depends_on        = [kubernetes_namespace_v1.portal]
+}

@@ -57,10 +57,12 @@ ssp:
   changeRequestId: ""
   revisionId: "argocd-managed"
 
-# DB creds synced from AWS Secrets Manager by ESO (see ExternalSecret in tf).
+# DB creds + GitHub PAT synced from AWS Secrets Manager by ESO.
 envFrom:
   - secretRef:
       name: portal-db
+  - secretRef:
+      name: portal-github
 
 env:
   - name: AUTH_MODE
