@@ -1,0 +1,75 @@
+# SSP portal — platform-owned Helm values consumed by the ArgoCD Application
+# at fleet-managers/argocd/apps/ssp-portal.yaml.
+
+image:
+  repository: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  port: 3000
+  type: ClusterIP
+
+ingress:
+  enabled: true
+  className: "alb"
+  host: portal.ssp.mightybee.dev
+  vpnInternal: false
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: portal.ssp.mightybee.dev
+    alb.ingress.kubernetes.io/group.name: ssp-public
+  tls:
+    enabled: false
+    issuer: "letsencrypt-prod"
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+tenant:
+  id: "ssp-portal"
+  domain: "ssp-portal"
+  department: "platform"
+  costCenter: "platform-eng"
+  product: "ssp-portal"
+  environment: "shared-prod"
+
+ssp:
+  serviceId: "platform-portal"
+  changeRequestId: ""
+  revisionId: "argocd-managed"
+
+# DB creds synced from AWS Secrets Manager by ESO (see ExternalSecret in tf).
+envFrom:
+  - secretRef:
+      name: portal-db
+
+env:
+  - name: AUTH_MODE
+    value: "stub"
+  - name: AI_MODE
+    value: "mock"
+  - name: WORKFLOW_MODE
+    value: "in-process"
+  - name: COGNITO_REGION
+    value: "eu-west-1"
+  - name: COGNITO_USER_POOL_ID
+    value: "eu-west-1_zEVRIg5JY"
+  - name: COGNITO_CLIENT_ID
+    value: "8jb16v8uff49e2vcsg7fqijl0"
+  - name: FLEET_REPO_OWNER
+    value: "nguyenhoangnam123"
+  - name: FLEET_REPO_NAME
+    value: "alice-ssp"
+  - name: FLEET_REPO_BASE_BRANCH
+    value: "main"

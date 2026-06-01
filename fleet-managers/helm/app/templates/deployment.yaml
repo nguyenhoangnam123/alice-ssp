@@ -15,6 +15,10 @@ spec:
         {{- include "app.labels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "app.serviceAccountName" . }}
+      {{- with .Values.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: {{ include "app.name" . }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -23,5 +27,13 @@ spec:
             - name: http
               containerPort: {{ .Values.service.port }}
               protocol: TCP
+          {{- with .Values.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

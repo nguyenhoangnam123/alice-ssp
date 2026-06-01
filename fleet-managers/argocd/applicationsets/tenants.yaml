@@ -8,28 +8,30 @@ metadata:
 spec:
   generators:
     - git:
-        repoURL: https://github.com/ORG/fleet-managers.git
+        repoURL: https://github.com/nguyenhoangnam123/alice-ssp.git
         revision: main
         files:
-          - path: "tenants/*/services/*/values.yaml"
+          - path: "fleet-managers/tenants/*/services/*/values.yaml"
   template:
     metadata:
-      name: "{{path[1]}}-{{path[3]}}"
+      # path[] indices: fleet-managers/tenants/<domain>/services/<service>/values.yaml
+      #                 0             1       2        3        4         5
+      name: "{{path[2]}}-{{path[4]}}"
       labels:
-        ssp.platform/tenant-domain: "{{path[1]}}"
-        ssp.platform/service-slug: "{{path[3]}}"
+        ssp.platform/tenant-domain: "{{path[2]}}"
+        ssp.platform/service-slug: "{{path[4]}}"
     spec:
-      project: "tenant-{{path[1]}}"
+      project: "tenant-{{path[2]}}"
       source:
-        repoURL: https://github.com/ORG/fleet-managers.git
+        repoURL: https://github.com/nguyenhoangnam123/alice-ssp.git
         targetRevision: main
-        path: helm/app
+        path: fleet-managers/helm/app
         helm:
           valueFiles:
-            - "../../tenants/{{path[1]}}/services/{{path[3]}}/values.yaml"
+            - "../../tenants/{{path[2]}}/services/{{path[4]}}/values.yaml"
       destination:
         server: https://kubernetes.default.svc
-        namespace: "tenant-{{path[1]}}"
+        namespace: "tenant-{{path[2]}}"
       syncPolicy:
         automated:
           prune: true

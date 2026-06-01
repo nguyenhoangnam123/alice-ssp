@@ -1,0 +1,31 @@
+# ArgoCD Application for the SSP portal itself. Platform-owned app, not a tenant workload —
+# uses the generic helm/app chart with values from fleet-managers/platform-apps/ssp-portal/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ssp-portal
+  namespace: argocd
+  labels:
+    ssp.platform/tenant: "ssp-portal"
+    ssp.platform/product: "ssp-portal"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nguyenhoangnam123/alice-ssp.git
+    targetRevision: main
+    path: fleet-managers/helm/app
+    helm:
+      valueFiles:
+        - ../../platform-apps/ssp-portal/values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ssp-portal
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false   # tf owns the namespace + labels
+      - ServerSideApply=true

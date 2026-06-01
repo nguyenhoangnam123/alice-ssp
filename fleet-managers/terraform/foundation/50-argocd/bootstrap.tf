@@ -17,7 +17,7 @@ resource "kubectl_manifest" "root_app" {
       source = {
         repoURL        = var.fleet_repo_url
         targetRevision = var.fleet_repo_revision
-        path           = "argocd"
+        path           = "fleet-managers/argocd"
         directory = {
           recurse = true
         }
