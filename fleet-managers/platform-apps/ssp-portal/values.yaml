@@ -72,9 +72,9 @@ env:
   - name: BEDROCK_REGION
     value: "eu-west-1"
   - name: BEDROCK_MODEL_ID
-    # Haiku 4.5 via EU cross-region inference profile. Sonnet 4.6 needs the Anthropic
-    # use-case form submission first; Haiku 4.5 is already approved for this account.
-    value: "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+    # Claude Opus 4.6 — most capable model in the family, ideal for complex code
+    # generation (Dockerfile + GHA workflow + Helm values in one pass).
+    value: "eu.anthropic.claude-opus-4-6-v1"
   - name: WORKFLOW_MODE
     value: "in-process"
   - name: COGNITO_REGION
