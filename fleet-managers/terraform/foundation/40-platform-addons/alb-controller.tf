@@ -86,10 +86,16 @@ resource "kubectl_manifest" "gatewayclass_alb_internal" {
     }
     spec = {
       controllerName = "gateway.k8s.aws/alb"
+      parametersRef = {
+        group     = "gateway.k8s.aws"
+        kind      = "LoadBalancerConfiguration"
+        name      = "alb-internal"
+        namespace = "kube-system"
+      }
     }
   })
   server_side_apply = true
-  depends_on        = [helm_release.aws_load_balancer_controller]
+  depends_on        = [kubectl_manifest.lbconfig_internal]
 }
 
 resource "kubectl_manifest" "gatewayclass_alb_public" {
@@ -101,8 +107,14 @@ resource "kubectl_manifest" "gatewayclass_alb_public" {
     }
     spec = {
       controllerName = "gateway.k8s.aws/alb"
+      parametersRef = {
+        group     = "gateway.k8s.aws"
+        kind      = "LoadBalancerConfiguration"
+        name      = "alb-public"
+        namespace = "kube-system"
+      }
     }
   })
   server_side_apply = true
-  depends_on        = [helm_release.aws_load_balancer_controller]
+  depends_on        = [kubectl_manifest.lbconfig_public]
 }

@@ -12,17 +12,19 @@ service:
   port: 3000
   type: ClusterIP
 
+# Ingress turned off — portal is exposed via Gateway API HTTPRoute (route block below).
 ingress:
+  enabled: false
+
+# HTTPRoute attaches to the shared public Gateway's HTTPS listener (sectionName=https).
+# External-DNS auto-creates the Route53 A record from .Values.route.host.
+route:
   enabled: true
-  className: "alb"
   host: portal.ssp.mightybee.dev
   vpnInternal: false
+  tls: true   # attach to https listener (port 443) — ACM cert from LBConfig
   annotations:
     external-dns.alpha.kubernetes.io/hostname: portal.ssp.mightybee.dev
-    alb.ingress.kubernetes.io/group.name: ssp-public
-  tls:
-    enabled: false
-    issuer: "letsencrypt-prod"
 
 resources:
   requests:

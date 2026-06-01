@@ -24,10 +24,6 @@ resource "kubectl_manifest" "shared_gateway_internal" {
       labels = {
         "ssp.platform/tenant" = "platform-shared"
       }
-      annotations = {
-        # LBC reads this annotation to decide internal vs internet-facing ALB.
-        "alb.ingress.kubernetes.io/scheme" = "internal"
-      }
     }
     spec = {
       gatewayClassName = "alb-internal"
@@ -66,32 +62,61 @@ resource "kubectl_manifest" "shared_gateway_public" {
       labels = {
         "ssp.platform/tenant" = "platform-shared"
       }
-      annotations = {
-        "alb.ingress.kubernetes.io/scheme" = "internet-facing"
-      }
     }
     spec = {
       gatewayClassName = "alb-public"
-      listeners = [{
-        name     = "http"
-        port     = 80
-        protocol = "HTTP"
-        allowedRoutes = {
-          namespaces = {
-            from = "Selector"
-            selector = {
-              matchExpressions = [{
-                key      = "ssp.platform/tenant"
-                operator = "Exists"
-              }]
+      listeners = [
+        {
+          name     = "http"
+          port     = 80
+          protocol = "HTTP"
+          allowedRoutes = {
+            namespaces = {
+              from = "Selector"
+              selector = {
+                matchExpressions = [{
+                  key      = "ssp.platform/tenant"
+                  operator = "Exists"
+                }]
+              }
+            }
+          }
+        },
+        {
+          # HTTPS listener. tls.certificateRefs is required by spec when mode=Terminate;
+          # we point at a placeholder Secret because the actual cert comes from the
+          # LoadBalancerConfiguration's defaultCertificate (ACM ARN, in 15-dns).
+          name     = "https"
+          port     = 443
+          protocol = "HTTPS"
+          tls = {
+            mode = "Terminate"
+            certificateRefs = [{
+              kind      = "Secret"
+              name      = "gateway-tls-placeholder"
+              namespace = "gateway-system"
+            }]
+          }
+          allowedRoutes = {
+            namespaces = {
+              from = "Selector"
+              selector = {
+                matchExpressions = [{
+                  key      = "ssp.platform/tenant"
+                  operator = "Exists"
+                }]
+              }
             }
           }
         }
-      }]
+      ]
     }
   })
+  server_side_apply = true
   depends_on = [
     kubectl_manifest.gatewayclass_alb_public,
     kubernetes_namespace_v1.gateway_system,
+    kubernetes_secret_v1.gateway_tls_placeholder,
+    kubectl_manifest.lbconfig_public,
   ]
 }
