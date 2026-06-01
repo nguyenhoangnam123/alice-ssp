@@ -1,0 +1,6 @@
+# Platform team owns this repo. PRs opened by the SSP bot require a human review.
+*                       @platform-team
+/terraform/             @platform-team
+/helm/                  @platform-team
+/argocd/                @platform-team
+/tenants/               @platform-team

@@ -1,0 +1,63 @@
+# Default values. Per-service values.yaml lives in tenants/<domain>/<service>/values.yaml.
+
+image:
+  repository: ""
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  port: 8080
+  type: ClusterIP
+
+# Legacy Ingress (MVP1). LBC v3.x reads alb.* annotations to provision an ALB.
+ingress:
+  enabled: false
+  className: "alb"
+  host: ""           # e.g. portal.ssp.mightybee.dev
+  vpnInternal: false # true → internal ALB; false → public ALB
+  annotations: {}
+  tls:
+    enabled: false
+    issuer: "letsencrypt-prod"
+
+# Gateway API HTTPRoute (MVP2 — kept so per-service rollout is one value flip).
+route:
+  enabled: false
+  host: ""
+  vpnInternal: true
+  tls: false
+  annotations: {}
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}    # filled with eks.amazonaws.com/role-arn by IRSA
+
+# Tenant metadata propagates to labels for cost attribution.
+# See fleet-managers/docs/adr/0003-tag-policy.md for the schema. OpenCost / Split Cost
+# Allocation reads these labels to break shared cluster spend down by tenant / product /
+# cost-center. Set product=ssp-portal when deploying the SSP portal app itself.
+tenant:
+  id: ""
+  domain: ""
+  department: ""
+  costCenter: "platform-eng"
+  product: "ssp-tenant-workload"
+  environment: "shared-prod"
+
+# Filled by SSP at PR time. The dockerfile_snapshot from ServiceRevision is built by CI;
+# the resulting image:tag is plugged in here.
+ssp:
+  serviceId: ""
+  changeRequestId: ""
+  revisionId: ""

@@ -1,0 +1,42 @@
+# Shared across all foundation layers. Copy to terraform.shared.tfvars (gitignored).
+# Pass via: terraform apply -var-file=../terraform.shared.tfvars
+
+aws_region     = "eu-west-1"
+aws_account_id = "123456789012"
+aws_profile    = "alice"               # named profile in ~/.aws/credentials
+environment    = "shared-prod"
+
+cluster_name = "ssp-shared"
+
+# State backend created by 00-bootstrap. Used by 10+ via terraform_remote_state.
+state_bucket_name    = "ssp-platform-tfstate"
+state_dynamodb_table = "ssp-platform-tflock"
+
+# ---------------------------------------------------------------------------
+# Tag policy
+# ---------------------------------------------------------------------------
+# Every AWS resource gets these as default_tags (merged with layer-specific +
+# resource-specific). Cost Explorer / Split Cost Allocation reads these to roll up
+# by tenant / product / cost_center.
+#
+# Convention:
+#   tenant       = "platform-shared"     for shared infra (VPC, NAT, EKS cluster)
+#                = "ssp-portal"          for portal-app-only resources (Cognito, RDS)
+#                = "<tenant-uuid>"       for per-tenant resources (set by tenant modules)
+#   product      = "ssp-platform"        for shared infra
+#                = "ssp-portal"          for the llm-product-poc app and its dependencies
+#                = "ssp-tenant-workload" for tenant workloads
+#   environment  = shared-prod | shared-dev
+#   cost_center  = platform-eng          for everything DevOps/platform-owned
+#                = <dept>-eng            inherited from Tenant.department for tenant resources
+#   managed_by   = terraform             always
+#   owner        = platform-team | devops | tenant-<domain>
+# ---------------------------------------------------------------------------
+default_tags = {
+  tenant      = "platform-shared"
+  product     = "ssp-platform"
+  environment = "shared-prod"
+  cost_center = "platform-eng"
+  managed_by  = "terraform"
+  owner       = "devops"
+}

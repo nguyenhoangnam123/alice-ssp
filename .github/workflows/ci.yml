@@ -1,0 +1,38 @@
+name: ci-portal
+
+on:
+  pull_request:
+    paths: ["llm-product-poc/**", ".github/workflows/ci.yml"]
+  push:
+    branches: [main]
+    paths: ["llm-product-poc/**"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: llm-product-poc
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  lint-typecheck-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: llm-product-poc/package-lock.json
+      - run: npm ci
+      - run: npm run lint --if-present
+      - run: npm run typecheck
+      - run: npm run build
+        env:
+          DATABASE_URL: postgres://ssp:ssp@localhost:5432/ssp
+          AUTH_MODE: stub
+          AI_MODE: mock
+          WORKFLOW_MODE: in-process

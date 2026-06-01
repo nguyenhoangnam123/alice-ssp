@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ssp-postgres
+    environment:
+      POSTGRES_USER: ssp
+      POSTGRES_PASSWORD: ssp
+      POSTGRES_DB: ssp
+    ports:
+      - "5432:5432"
+    volumes:
+      - ssp_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ssp -d ssp"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  ssp_pg_data:

@@ -1,0 +1,60 @@
+name: terraform
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  fmt:
+    name: fmt-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+      - name: terraform fmt -check -recursive
+        run: terraform fmt -check -recursive terraform/
+
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - terraform/modules/tenant-namespace
+          - terraform/modules/tenant-iam
+          - terraform/tenants/_template
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+      - name: terraform init (backend=false)
+        run: terraform -chdir=${{ matrix.module }} init -backend=false
+      - name: terraform validate
+        run: terraform -chdir=${{ matrix.module }} validate
+
+  tflint:
+    name: tflint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+      - name: tflint
+        run: |
+          tflint --init
+          tflint --recursive --format compact terraform/

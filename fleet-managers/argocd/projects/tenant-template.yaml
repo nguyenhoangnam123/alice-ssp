@@ -1,0 +1,29 @@
+# Template AppProject per tenant. The SSP PR copies this and substitutes <TENANT_DOMAIN>.
+# ArgoCD AppProject scopes which clusters/namespaces an Application can write to —
+# this is the ArgoCD-level guardrail for the namespace-per-tenant model.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: tenant-TENANT_DOMAIN
+  namespace: argocd
+  labels:
+    ssp.platform/tenant-domain: TENANT_DOMAIN
+spec:
+  description: "AppProject for tenant TENANT_DOMAIN. Scoped to its namespace only."
+  sourceRepos:
+    - "https://github.com/ORG/fleet-managers.git"
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: tenant-TENANT_DOMAIN
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ServiceAccount
+    - group: apps
+      kind: Deployment
+    - group: networking.k8s.io
+      kind: Ingress

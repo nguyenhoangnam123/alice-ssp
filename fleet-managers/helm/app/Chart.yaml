@@ -1,0 +1,8 @@
+apiVersion: v2
+name: app
+description: Generic application chart for SSP tenants. AI agent renders values.yaml; this chart is intentionally simple so a human reviewer can scan it.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: platform-team

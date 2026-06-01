@@ -1,0 +1,26 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Real tfvars (with account IDs / secrets) — only the .example is committed.
+*.tfvars
+!*.tfvars.example
+
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Per-cluster kubeconfig — kept here so KUBECONFIG=... can wrap kubectl/helm/etc without
+# polluting ~/.kube/config and conflicting with other clusters.
+.kubeconfig

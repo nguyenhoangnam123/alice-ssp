@@ -1,0 +1,47 @@
+# Per-service values.yaml. The SSP AI agent fills this in when it opens a PR for a new
+# Service or ChangeRequest. ArgoCD picks it up via the ApplicationSet.
+#
+# Path convention: tenants/<tenant-domain>/services/<service-slug>/values.yaml
+
+image:
+  repository: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/example-service
+  tag: "REPLACED_BY_CI"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  port: 8080
+
+route:
+  enabled: true
+  # Convention: <subdomain>.<tenant-domain>.ssp.mightybee.dev
+  host: example.acme.ssp.mightybee.dev
+  vpnInternal: true
+  tls: false
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+serviceAccount:
+  create: true
+  annotations:
+    # Filled by tenant-iam module output.
+    eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/ssp-tenant-acme"
+
+tenant:
+  id: "01H8XQK..."
+  domain: "acme"
+  department: "growth"
+
+ssp:
+  serviceId: "01H8YYY..."
+  changeRequestId: "01H8ZZZ..."
+  revisionId: "01H900..."

@@ -1,0 +1,18 @@
+tenant_id          = "01H8XQK1ABCDEF..."
+tenant_domain      = "acme"
+department         = "growth"
+head_of_department = "jane.doe@example.com"
+
+# Tag schema — see fleet-managers/docs/adr/0003-tag-policy.md
+cost_center = "growth-eng"
+environment = "shared-prod"
+
+oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLE"
+oidc_provider_url = "https://oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLE"
+
+s3_bucket_name = "ssp-platform-tenant-artifacts"
+
+# Any extra Tenant.tags from the portal Tenant.tags JSON column propagate here.
+extra_tags = {
+  squad = "growth-acquisition"
+}

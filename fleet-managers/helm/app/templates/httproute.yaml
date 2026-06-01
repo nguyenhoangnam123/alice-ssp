@@ -1,0 +1,31 @@
+{{- if .Values.route.enabled -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+  {{- with .Values.route.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  # parentRefs point at the SHARED Gateway in the gateway-system namespace, provisioned by
+  # foundation/40-platform-addons. One ALB serves all tenant HTTPRoutes (internal or public),
+  # routed by hostname. ReferenceGrant on the Gateway side allows attachment from any
+  # ssp.platform/tenant-labeled namespace.
+  parentRefs:
+    - name: {{ if .Values.route.vpnInternal }}alb-internal-shared{{ else }}alb-public-shared{{ end }}
+      namespace: gateway-system
+      sectionName: {{ if .Values.route.tls }}https{{ else }}http{{ end }}
+  hostnames:
+    - {{ .Values.route.host | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ include "app.fullname" . }}
+          port: {{ .Values.service.port }}
+{{- end }}

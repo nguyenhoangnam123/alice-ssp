@@ -1,0 +1,39 @@
+# Top-level gitignore for the alice-ssp monorepo. Per-subdir gitignores still apply.
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.log
+coverage/
+.turbo/
+
+# Env files (only .example is committed)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform.lock.hcl
+crash.log
+crash.*.log
+# Per-account tfvars hold account ids / secrets; only the .example is committed.
+*.tfvars
+!*.tfvars.example
+
+# Kubeconfig (we run with KUBECONFIG=alice/.kubeconfig to isolate from other clusters)
+.kubeconfig
+
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Docker artifacts
+dist/
