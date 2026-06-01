@@ -52,6 +52,16 @@ resource "kubectl_manifest" "shared_gateway_internal" {
   ]
 }
 
+data "terraform_remote_state" "waf" {
+  backend = "s3"
+  config = {
+    bucket  = var.state_bucket_name
+    key     = "foundation/45-waf/terraform.tfstate"
+    region  = var.aws_region
+    profile = var.aws_profile
+  }
+}
+
 resource "kubectl_manifest" "shared_gateway_public" {
   yaml_body = yamlencode({
     apiVersion = "gateway.networking.k8s.io/v1"
@@ -61,6 +71,11 @@ resource "kubectl_manifest" "shared_gateway_public" {
       namespace = "gateway-system"
       labels = {
         "ssp.platform/tenant" = "platform-shared"
+      }
+      annotations = {
+        # LBC reads this on Gateway resources too (same code path as Ingress).
+        # WebACL is provisioned by foundation/45-waf.
+        "alb.ingress.kubernetes.io/wafv2-acl-arn" = data.terraform_remote_state.waf.outputs.web_acl_arn
       }
     }
     spec = {
