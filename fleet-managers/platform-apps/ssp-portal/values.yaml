@@ -39,7 +39,10 @@ resources:
 
 serviceAccount:
   create: true
-  annotations: {}
+  # IRSA role lets the portal pod call Bedrock InvokeModel on Claude models.
+  # Role provisioned by fleet-managers/terraform/foundation/70-portal-app/portal-iam.tf.
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::195748744911:role/ssp-portal-app
 
 tenant:
   id: "ssp-portal"
@@ -63,7 +66,11 @@ env:
   - name: AUTH_MODE
     value: "stub"
   - name: AI_MODE
-    value: "mock"
+    value: "bedrock"
+  - name: BEDROCK_REGION
+    value: "eu-west-1"
+  - name: BEDROCK_MODEL_ID
+    value: "eu.anthropic.claude-sonnet-4-6"
   - name: WORKFLOW_MODE
     value: "in-process"
   - name: COGNITO_REGION

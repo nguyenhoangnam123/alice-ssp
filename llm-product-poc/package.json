@@ -23,7 +23,8 @@
     "postgres": "^3.4.4",
     "zod": "^3.23.8",
     "ulid": "^2.3.0",
-    "clsx": "^2.1.1"
+    "clsx": "^2.1.1",
+    "@aws-sdk/client-bedrock-runtime": "^3.700.0"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
