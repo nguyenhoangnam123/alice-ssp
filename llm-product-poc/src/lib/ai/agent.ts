@@ -1,4 +1,8 @@
 import type { Service, Tenant, ChangeRequest } from "@/lib/db/schema";
+import {
+  BedrockRuntimeClient,
+  InvokeModelCommand,
+} from "@aws-sdk/client-bedrock-runtime";
 import { systemPrompt, userPrompt } from "./prompts";
 
 export type Artifacts = {
@@ -12,8 +16,8 @@ export type Artifacts = {
 /**
  * Generate the Dockerfile / CI / Helm values for a Service+ChangeRequest.
  *
- * AI_MODE=mock  — returns deterministic templates (used in MVP1 and tests).
- * AI_MODE=bedrock — calls Bedrock InvokeModel (MVP2; not implemented).
+ * AI_MODE=mock    — deterministic templates (used in CI / offline dev).
+ * AI_MODE=bedrock — Claude on Bedrock with prompt caching on the system prompt.
  */
 export async function generateArtifacts(args: {
   service: Service;
@@ -22,20 +26,132 @@ export async function generateArtifacts(args: {
 }): Promise<Artifacts> {
   const mode = process.env.AI_MODE ?? "mock";
 
+  if (mode === "bedrock") {
+    return bedrockArtifacts(args);
+  }
   if (mode === "mock") {
     return mockArtifacts(args);
   }
-
-  if (mode === "bedrock") {
-    // TODO MVP2: @aws-sdk/client-bedrock-runtime invokeModel with the prompts from prompts.ts.
-    // Keep the return type identical so call sites don't change.
-    const _sys = systemPrompt();
-    const _usr = userPrompt(args);
-    throw new Error("AI_MODE=bedrock not implemented in MVP1");
-  }
-
   throw new Error(`unknown AI_MODE: ${mode}`);
 }
+
+// ---------------------------------------------------------------------------
+// Bedrock — real Claude inference
+// ---------------------------------------------------------------------------
+
+let cachedClient: BedrockRuntimeClient | null = null;
+function client(): BedrockRuntimeClient {
+  if (!cachedClient) {
+    cachedClient = new BedrockRuntimeClient({
+      region: process.env.BEDROCK_REGION ?? "eu-west-1",
+    });
+  }
+  return cachedClient;
+}
+
+async function bedrockArtifacts(args: {
+  service: Service;
+  tenant: Tenant;
+  changeRequest: ChangeRequest;
+}): Promise<Artifacts> {
+  const modelId =
+    process.env.BEDROCK_MODEL_ID ?? "eu.anthropic.claude-sonnet-4-6";
+
+  const sys = systemPrompt();
+  const usr = userPrompt(args);
+
+  const body = {
+    anthropic_version: "bedrock-2023-05-31",
+    max_tokens: 4096,
+    // Prompt caching on the system prompt — same prompt across every Service/CR run, so
+    // we only pay full-token cost on the first invocation per ~5min window.
+    system: [
+      {
+        type: "text",
+        text: sys,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
+    messages: [
+      {
+        role: "user",
+        content: [{ type: "text", text: usr }],
+      },
+    ],
+  };
+
+  const cmd = new InvokeModelCommand({
+    modelId,
+    contentType: "application/json",
+    accept: "application/json",
+    body: JSON.stringify(body),
+  });
+
+  const start = Date.now();
+  const res = await client().send(cmd);
+  const elapsed = Date.now() - start;
+
+  const decoded = new TextDecoder().decode(res.body);
+  const parsed = JSON.parse(decoded) as {
+    content: Array<{ type: string; text?: string }>;
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
+  };
+
+  const text = parsed.content
+    .filter((b) => b.type === "text")
+    .map((b) => b.text ?? "")
+    .join("");
+
+  const extracted = extractArtifacts(text);
+
+  console.log(
+    `bedrock ok model=${modelId} ms=${elapsed} tok_in=${parsed.usage?.input_tokens ?? "?"} tok_out=${parsed.usage?.output_tokens ?? "?"} cache_read=${parsed.usage?.cache_read_input_tokens ?? 0}`,
+  );
+
+  return {
+    dockerfile: extracted.dockerfile,
+    ciWorkflow: extracted.ci_workflow,
+    helmValues: extracted.helm_values,
+    ciPipelineRef: `${args.service.gitRepo}/.github/workflows/build.yml`,
+    summary: extracted.summary,
+  };
+}
+
+/**
+ * Parse the model's response. The system prompt asks Claude to wrap each artifact in a
+ * fenced code block with a known fence tag (dockerfile / ci / helm). The summary is the
+ * prose before the first fence.
+ */
+function extractArtifacts(text: string): {
+  dockerfile: string;
+  ci_workflow: string;
+  helm_values: string;
+  summary: string;
+} {
+  const block = (tag: string): string => {
+    const re = new RegExp("```" + tag + "\\s*\\n([\\s\\S]*?)\\n```", "i");
+    return text.match(re)?.[1]?.trim() ?? "";
+  };
+
+  const firstFenceIdx = text.indexOf("```");
+  const summary =
+    firstFenceIdx > 0 ? text.slice(0, firstFenceIdx).trim() : "(no summary)";
+
+  return {
+    dockerfile: block("dockerfile") || block("Dockerfile"),
+    ci_workflow: block("ci") || block("yaml") || block("yml"),
+    helm_values: block("helm") || block("values"),
+    summary,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Mock — deterministic templates for offline dev / CI
+// ---------------------------------------------------------------------------
 
 function mockArtifacts(args: {
   service: Service;
@@ -45,7 +161,7 @@ function mockArtifacts(args: {
   const { service, tenant } = args;
   const serviceSlug = service.name.toLowerCase().replace(/[^a-z0-9-]/g, "-");
 
-  const dockerfile = `# Generated by SSP AI agent (mock) — review before merge
+  const dockerfile = `# Generated by SSP AI agent (mock)
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
@@ -62,13 +178,11 @@ EXPOSE 8080
 CMD ["node", "dist/index.js"]
 `;
 
-  const ciWorkflow = `# Generated by SSP AI agent (mock)
-name: build-and-push
+  const ciWorkflow = `name: build-and-push
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -95,59 +209,30 @@ jobs:
           docker push "$REGISTRY/$REPO:$TAG"
 `;
 
-  const helmValues = `# Generated by SSP AI agent (mock) for service ${service.name} (tenant ${tenant.domain})
-image:
-  repository: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/${serviceSlug}
+  const helmValues = `image:
+  repository: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/${serviceSlug}
   tag: latest
-  pullPolicy: IfNotPresent
-
-replicaCount: 2
-
 service:
   port: 8080
-
-# Gateway API HTTPRoute — attaches to the shared internal/public ALB Gateway.
 route:
   enabled: ${Boolean(service.subdomain)}
-  host: "${service.subdomain ?? service.name}.${tenant.domain}.ssp.eaglesoftvn.com"
+  host: "${service.subdomain ?? service.name}.${tenant.domain}.ssp.mightybee.dev"
   vpnInternal: ${service.vpnInternal}
   tls: ${!service.vpnInternal}
-  annotations: {}
-
-resources:
-  requests:
-    cpu: 100m
-    memory: 128Mi
-  limits:
-    cpu: 500m
-    memory: 512Mi
-
-serviceAccount:
-  create: true
-  annotations:
-    eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/ssp-tenant-${tenant.domain}"
-
 tenant:
   id: "${tenant.id}"
   domain: "${tenant.domain}"
   department: "${tenant.department}"
-  costCenter: "${tenant.department}-eng"
-  product: "ssp-tenant-workload"
-  environment: "shared-prod"
-
 ssp:
   serviceId: "${service.id}"
   changeRequestId: "${args.changeRequest.id}"
-  revisionId: "(filled at insert time)"
 `;
-
-  const summary = `Mock AI summary: generated Dockerfile (node:20-alpine, non-root), GitHub Actions workflow with OIDC-based ECR push, Helm values for tenant ${tenant.domain}/${service.name}. No code changes proposed in the application repo.`;
 
   return {
     dockerfile,
     ciWorkflow,
     helmValues,
     ciPipelineRef: `${service.gitRepo}/.github/workflows/build.yml`,
-    summary,
+    summary: `Mock AI summary: scaffolded Dockerfile + GitHub Actions OIDC ECR push + Helm values for ${tenant.domain}/${service.name}.`,
   };
 }
