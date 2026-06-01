@@ -15,7 +15,27 @@ locals {
   portal_cert_arn = data.terraform_remote_state.dns.outputs.portal_certificate_arn
 }
 
-# Public ALB — terminates TLS with the ACM cert provisioned in 15-dns.
+# Default target group config — IP targets. Pod IPs become ALB targets directly, skipping
+# the NodePort hop and kube-proxy LB layer. Lower latency + per-pod observability.
+resource "kubectl_manifest" "tgc_ip_default" {
+  yaml_body = yamlencode({
+    apiVersion = "gateway.k8s.aws/v1beta1"
+    kind       = "TargetGroupConfiguration"
+    metadata = {
+      name      = "ip-targets-default"
+      namespace = "kube-system"
+    }
+    spec = {
+      defaultConfiguration = {
+        targetType = "ip"
+      }
+    }
+  })
+  server_side_apply = true
+  depends_on        = [kubectl_manifest.lbc_gateway_crds]
+}
+
+# Public ALB — terminates TLS with the ACM cert provisioned in 15-dns, IP target type.
 resource "kubectl_manifest" "lbconfig_public" {
   yaml_body = yamlencode({
     apiVersion = "gateway.k8s.aws/v1beta1"
@@ -26,6 +46,9 @@ resource "kubectl_manifest" "lbconfig_public" {
     }
     spec = {
       scheme = "internet-facing"
+      defaultTargetGroupConfiguration = {
+        name = "ip-targets-default"
+      }
       listenerConfigurations = [
         {
           protocolPort       = "HTTPS:443"
@@ -38,10 +61,13 @@ resource "kubectl_manifest" "lbconfig_public" {
     }
   })
   server_side_apply = true
-  depends_on        = [kubectl_manifest.lbc_gateway_crds]
+  depends_on = [
+    kubectl_manifest.lbc_gateway_crds,
+    kubectl_manifest.tgc_ip_default,
+  ]
 }
 
-# Internal ALB — no cert, internal scheme. Kept for VPN-only services later.
+# Internal ALB — IP targets, internal scheme. Kept for VPN-only services later.
 resource "kubectl_manifest" "lbconfig_internal" {
   yaml_body = yamlencode({
     apiVersion = "gateway.k8s.aws/v1beta1"
@@ -52,10 +78,16 @@ resource "kubectl_manifest" "lbconfig_internal" {
     }
     spec = {
       scheme = "internal"
+      defaultTargetGroupConfiguration = {
+        name = "ip-targets-default"
+      }
     }
   })
   server_side_apply = true
-  depends_on        = [kubectl_manifest.lbc_gateway_crds]
+  depends_on = [
+    kubectl_manifest.lbc_gateway_crds,
+    kubectl_manifest.tgc_ip_default,
+  ]
 }
 
 # Empty K8s Secret used as the Gateway HTTPS listener's tls.certificateRefs placeholder —

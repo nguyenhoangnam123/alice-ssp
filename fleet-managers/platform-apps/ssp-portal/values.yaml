@@ -10,10 +10,10 @@ replicaCount: 1
 
 service:
   port: 3000
-  # NodePort needed because LBC's Gateway API integration uses Instance target type by
-  # default. MVP2: add a TargetGroupConfiguration CR to switch to IP targets (skips the
-  # NodePort hop).
-  type: NodePort
+  # ClusterIP works because LBC TargetGroupConfiguration `ip-targets-default` (in
+  # foundation/40-platform-addons) is the LBConfig default — ALB targets pod IPs directly,
+  # no NodePort hop.
+  type: ClusterIP
 
 # Ingress turned off — portal is exposed via Gateway API HTTPRoute (route block below).
 ingress:
