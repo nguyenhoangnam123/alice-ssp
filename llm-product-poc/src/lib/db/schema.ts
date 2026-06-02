@@ -24,6 +24,14 @@ export const serviceStatus = pgEnum("service_status", [
 
 export const changeRequestStatus = pgEnum("change_request_status", [
   "submitted",
+  // Per-step workflow values — the CR moves through these as the orchestrator runs.
+  "policy_gate_passed",
+  "policy_gate_rejected",
+  "ai_validation_passed",
+  "ai_validation_rejected",
+  "ai_artifacts_generated",
+  "platform_reviewing",
+  // Legacy values kept for back-compat with existing rows (orchestrator no longer writes them).
   "aiReviewing",
   "needsChanges",
   "platformReviewing",
@@ -125,6 +133,11 @@ export const changeRequests = pgTable(
     status: changeRequestStatus("status").notNull().default("submitted"),
     summary: text("summary").notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    // Append-only log of every status transition. Each entry: { status, at, detail? }.
+    statusHistory: jsonb("status_history")
+      .$type<Array<{ status: string; at: string; detail?: string }>>()
+      .notNull()
+      .default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -146,10 +159,6 @@ export const serviceRevisions = pgTable(
       .references(() => services.id, { onDelete: "cascade" }),
     serviceStatus: serviceStatus("service_status").notNull(),
     crStatus: changeRequestStatus("cr_status").notNull(),
-    // Workflow step name — one revision per step in the orchestrator. Values:
-    // policy_gate_passed, policy_gate_rejected, ai_validation_passed, ai_validation_rejected,
-    // ai_artifacts_generated, pr_opened, pr_merged.
-    step: text("step"),
     ciPipelineRef: text("ci_pipeline_ref"),
     dockerfileSnapshot: text("dockerfile_snapshot"),
     cdManifestRef: text("cd_manifest_ref"),
@@ -158,7 +167,8 @@ export const serviceRevisions = pgTable(
   },
   (t) => ({
     serviceIdx: index("service_revisions_service_idx").on(t.serviceId),
-    crIdx: index("service_revisions_cr_idx").on(t.changeRequestId),
+    // 1 CR → 1 revision. Orchestrator upserts on change_request_id.
+    crUnique: uniqueIndex("service_revisions_cr_unique").on(t.changeRequestId),
   }),
 );
 

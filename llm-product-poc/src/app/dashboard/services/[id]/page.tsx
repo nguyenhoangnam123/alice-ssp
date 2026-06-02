@@ -59,9 +59,22 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
     .from(changeRequests)
     .where(eq(changeRequests.serviceId, svc.id))
     .orderBy(desc(changeRequests.createdAt));
+  // Join revisions with their CR to pull the per-step workflow timeline (status_history).
   const revs = await db
-    .select()
+    .select({
+      id: serviceRevisions.id,
+      serviceStatus: serviceRevisions.serviceStatus,
+      crStatus: serviceRevisions.crStatus,
+      aiSummary: serviceRevisions.aiSummary,
+      cdManifestRef: serviceRevisions.cdManifestRef,
+      dockerfileSnapshot: serviceRevisions.dockerfileSnapshot,
+      ciPipelineRef: serviceRevisions.ciPipelineRef,
+      createdAt: serviceRevisions.createdAt,
+      crSummary: changeRequests.summary,
+      crStatusHistory: changeRequests.statusHistory,
+    })
     .from(serviceRevisions)
+    .innerJoin(changeRequests, eq(changeRequests.id, serviceRevisions.changeRequestId))
     .where(eq(serviceRevisions.serviceId, svc.id))
     .orderBy(desc(serviceRevisions.createdAt))
     .limit(50);
@@ -69,7 +82,6 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
   // Serialize for the client component (Date → ISO string).
   const revisionsForClient = revs.map((r) => ({
     id: r.id,
-    step: r.step,
     serviceStatus: r.serviceStatus,
     crStatus: r.crStatus,
     aiSummary: r.aiSummary,
@@ -77,6 +89,8 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
     dockerfileSnapshot: r.dockerfileSnapshot,
     ciPipelineRef: r.ciPipelineRef,
     createdAt: r.createdAt.toISOString(),
+    crSummary: r.crSummary,
+    crStatusHistory: r.crStatusHistory ?? [],
   }));
 
   return (
