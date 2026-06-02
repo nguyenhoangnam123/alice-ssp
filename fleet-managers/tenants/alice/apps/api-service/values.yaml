@@ -5,13 +5,20 @@ tenant:
 
 ssp:
   serviceId: 01KT4VQ06937KK4JNTCTJA20C8
-  changeRequestId: 01KT4Y9W9Z9PTF3YXQAK4003FK
+  changeRequestId: 01KT4ZZ5JGEHH6BS8MX8D9EJWD
 
 replicaCount: 2
 
 image:
-  repository: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal
-  tag: 8de218fd12a8eb54fc3d344e9a42dc9e741dc3f2
+  repository: docker.io/library/nginx
+  tag: alpine
+  pullPolicy: IfNotPresent
+
+containerPort: 80
+
+service:
+  port: 80
+  type: ClusterIP
 
 resources:
   requests:
@@ -21,13 +28,29 @@ resources:
     cpu: 200m
     memory: 256Mi
 
-env:
-  - name: PORT
-    value: "8080"
-
 route:
   enabled: true
   host: api.ssp.mightybee.dev
   vpnInternal: false
   tls:
     enabled: true
+    termination: edge
+
+securityContext:
+  runAsUser: 10001
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 80
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: 80
+  initialDelaySeconds: 3
+  periodSeconds: 5
