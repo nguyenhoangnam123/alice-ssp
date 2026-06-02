@@ -1,0 +1,38 @@
+tenant:
+  id: "84b02a25117e4b7fbaa1983b64"
+  domain: acme
+  department: growth
+
+ssp:
+  serviceId: "01KT3EPBEJ8QQN0F9GVHZ6PZBT"
+  changeRequestId: "01KT3EPBEJY3WDEJA894Y1JVY7"
+
+replicaCount: 20
+
+image:
+  repository: "<AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/acme/t6-atcap"
+  tag: latest
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: "4"
+    memory: "8Gi"
+  limits:
+    cpu: "4"
+    memory: "8Gi"
+
+route:
+  enabled: true
+  host: t6-atcap.acme.ssp.mightybee.dev
+  vpnInternal: false
+  tls: true
+
+serviceAccount:
+  create: true
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+
+containerPort: 8080
