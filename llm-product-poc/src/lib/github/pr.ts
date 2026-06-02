@@ -11,13 +11,13 @@ export type FleetPr = {
 /**
  * Open a PR against the fleet-managers repo with the artifacts produced by the AI agent.
  *
- * Without GITHUB_TOKEN: logs the PR body to stdout and returns a mock URL (dev fallback).
- * With GITHUB_TOKEN: uses Octokit to create a branch, commit the files, and open a PR.
+ * Files added/updated per CR (one atomic commit, one branch, one PR):
+ *   - tenants/<tenant.domain>/apps/<service.name>/values.yaml      (Helm values)
+ *   - tenants/<tenant.domain>/apps/<service.name>/Dockerfile       (frozen snapshot)
+ *   - tenants/<tenant.domain>/apps/<service.name>/build.yml        (CI workflow)
+ *   - tenants/<tenant.domain>/apps/<service.name>/application.yaml (ArgoCD Application)
  *
- * Files added/updated per CR:
- *   - tenants/<tenant.domain>/apps/<service.name>/values.yaml   (Helm values for app chart)
- *   - tenants/<tenant.domain>/apps/<service.name>/Dockerfile    (AI-generated, frozen)
- *   - tenants/<tenant.domain>/apps/<service.name>/build.yml     (AI-generated CI workflow)
+ * Without GITHUB_TOKEN: logs the PR body to stdout and returns a mock URL (dev fallback).
  */
 export async function openFleetPr(args: {
   tenant: Tenant;
@@ -49,7 +49,6 @@ export async function openFleetPr(args: {
 
   const gh = new Octokit({ auth: token });
 
-  // 1. Get the base branch's tip SHA.
   const baseRef = await gh.git.getRef({
     owner,
     repo,
@@ -57,7 +56,6 @@ export async function openFleetPr(args: {
   });
   const baseSha = baseRef.data.object.sha;
 
-  // 2. Create the topic branch (if it already exists from a previous run, force update).
   try {
     await gh.git.createRef({
       owner,
@@ -65,8 +63,7 @@ export async function openFleetPr(args: {
       ref: `refs/heads/${branch}`,
       sha: baseSha,
     });
-  } catch (err) {
-    // If branch already exists, fast-forward it to base.
+  } catch {
     await gh.git.updateRef({
       owner,
       repo,
@@ -76,13 +73,12 @@ export async function openFleetPr(args: {
     });
   }
 
-  // 3. Commit the three artifacts in one commit (one createOrUpdateFileContents per file
-  //    would be 3 commits — using git tree API instead for a single atomic commit).
   const baseDir = `fleet-managers/tenants/${args.tenant.domain}/apps/${args.service.name}`;
   const files: Array<{ path: string; content: string }> = [
     { path: `${baseDir}/values.yaml`, content: args.artifacts.helmValues },
     { path: `${baseDir}/Dockerfile`, content: args.artifacts.dockerfile },
     { path: `${baseDir}/build.yml`, content: args.artifacts.ciWorkflow },
+    { path: `${baseDir}/application.yaml`, content: args.artifacts.argocdApp },
   ];
 
   const tree = await gh.git.createTree({
@@ -112,7 +108,6 @@ export async function openFleetPr(args: {
     sha: commit.data.sha,
   });
 
-  // 4. Open the PR.
   const pr = await gh.pulls.create({
     owner,
     repo,
@@ -147,10 +142,11 @@ function renderPrBody(args: {
 ### Files in this PR
 
 - \`fleet-managers/tenants/${args.tenant.domain}/apps/${args.service.name}/values.yaml\`
-- \`fleet-managers/tenants/${args.tenant.domain}/apps/${args.service.name}/Dockerfile\` *(frozen snapshot for review only; the live image is built from the app repo)*
+- \`fleet-managers/tenants/${args.tenant.domain}/apps/${args.service.name}/Dockerfile\` *(frozen snapshot for review)*
 - \`fleet-managers/tenants/${args.tenant.domain}/apps/${args.service.name}/build.yml\`
+- \`fleet-managers/tenants/${args.tenant.domain}/apps/${args.service.name}/application.yaml\` *(ArgoCD Application — app-of-apps for the tenant)*
 
-### AI summary
+### AI agent output
 
 ${args.artifacts.summary}
 

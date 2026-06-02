@@ -7,17 +7,18 @@ import {
   tenants,
   type Service,
 } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { runPolicyGate } from "@/lib/policy/gate";
-import { generateArtifacts } from "@/lib/ai/agent";
+import { generateArtifacts, type AgentResult } from "@/lib/ai/agent";
 import { openFleetPr } from "@/lib/github/pr";
 
 /**
- * In-process replacement for the Step Functions workflow described in the design.
- * Same state names, same transitions, same projection back onto Service.currentStatus.
+ * In-process replacement for the Step Functions workflow.
  *
- * In MVP2 this is replaced by `StartExecution` against a real Step Functions state machine;
- * the call sites do not change.
+ *   submitted → aiReview → (rejected | platformReview → provisioning → working)
+ *
+ * The AI agent can REJECT the CR. In that case the workflow short-circuits: no PR, no
+ * provisioning, status becomes rejected with the reason recorded in the revision.
  */
 export async function processChangeRequest(changeRequestId: string): Promise<{
   state: string;
@@ -47,34 +48,50 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
     .set({ status: "aiReviewing", updatedAt: new Date() })
     .where(eq(changeRequests.id, cr.id));
 
+  // Deterministic gate first (cheap fast checks). Catches description length, https git url,
+  // unique subdomain, soft-deleted tenant — before we burn LLM tokens.
   const gate = await runPolicyGate({ service: svc, tenant });
   if (!gate.ok) {
-    await db
-      .update(services)
-      .set({ currentStatus: "rejected", updatedAt: new Date() })
-      .where(eq(services.id, svc.id));
-    await db
-      .update(changeRequests)
-      .set({ status: "rejected", updatedAt: new Date() })
-      .where(eq(changeRequests.id, cr.id));
-    await writeRevision({
-      changeRequestId: cr.id,
-      service: svc,
-      serviceStatus: "rejected",
-      crStatus: "rejected",
-      aiSummary: `Policy gate failed: ${gate.violations.join("; ")}`,
-    });
-    return { state: "rejected", reason: gate.violations.join("; ") };
+    return reject(cr.id, svc, gate.violations.join("; "));
   }
 
-  const artifacts = await generateArtifacts({ service: svc, tenant, changeRequest: cr });
+  // Find the previous revision (if any) to describe "current state" to the AI.
+  const [previous] = await db
+    .select()
+    .from(serviceRevisions)
+    .where(eq(serviceRevisions.serviceId, svc.id))
+    .orderBy(desc(serviceRevisions.createdAt))
+    .limit(1);
+
+  const currentStateSummary = previous
+    ? `Most recent revision was at ${previous.createdAt.toISOString()}, service_status=${previous.serviceStatus}, cr_status=${previous.crStatus}.\nAI summary at that revision:\n${previous.aiSummary ?? "(no summary)"}`
+    : "(new service — no previous revision)";
+
+  // LLM call.
+  let result: AgentResult;
+  try {
+    result = await generateArtifacts({
+      service: svc,
+      tenant,
+      changeRequest: cr,
+      currentStateSummary,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("AI agent failed", msg);
+    return reject(cr.id, svc, `AI agent error: ${msg}`);
+  }
+
+  if (result.kind === "rejected") {
+    return reject(cr.id, svc, result.reason);
+  }
 
   // --- 2. open PR → platformReview ---------------------------------------
   const pr = await openFleetPr({
     tenant,
     service: svc,
     changeRequest: cr,
-    artifacts,
+    artifacts: result.artifacts,
   });
 
   await db
@@ -86,23 +103,24 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
     .set({ status: "platformReviewing", updatedAt: new Date() })
     .where(eq(changeRequests.id, cr.id));
 
-  await writeRevision({
+  await db.insert(serviceRevisions).values({
+    id: ulid(),
     changeRequestId: cr.id,
-    service: svc,
+    serviceId: svc.id,
     serviceStatus: "platformReview",
     crStatus: "platformReviewing",
-    ciPipelineRef: artifacts.ciPipelineRef,
-    dockerfileSnapshot: artifacts.dockerfile,
+    ciPipelineRef: result.artifacts.ciPipelineRef,
+    dockerfileSnapshot: result.artifacts.dockerfile,
     cdManifestRef: pr.url,
-    aiSummary: artifacts.summary,
+    aiSummary: result.artifacts.summary,
   });
 
   return { state: "platformReview", prUrl: pr.url };
 }
 
 /**
- * Called by a webhook in MVP2. For now, an admin can trigger it manually from the UI
- * to simulate ArgoCD reporting "healthy".
+ * Called by an ArgoCD webhook in MVP2; for now an admin can flip a CR by hitting the
+ * mark-provisioned API to simulate "platform engineer merged + ArgoCD reconciled healthy".
  */
 export async function markProvisioned(changeRequestId: string) {
   const [cr] = await db
@@ -127,37 +145,26 @@ export async function markProvisioned(changeRequestId: string) {
     serviceId: cr.serviceId,
     serviceStatus: "working",
     crStatus: "applied",
-    aiSummary: "ArgoCD reported sync healthy (simulated)",
+    aiSummary: "**Current state**: Provisioning complete.\n\n**Desired state**: (n/a — terminal state)\n\n**Summary**: ArgoCD reported sync healthy.",
   });
 }
 
-async function writeRevision(args: {
-  changeRequestId: string;
-  service: Service;
-  serviceStatus: "na" | "aiReview" | "platformReview" | "provisioning" | "working" | "rejected";
-  crStatus:
-    | "submitted"
-    | "aiReviewing"
-    | "needsChanges"
-    | "platformReviewing"
-    | "approved"
-    | "rejected"
-    | "merged"
-    | "applied";
-  ciPipelineRef?: string;
-  dockerfileSnapshot?: string;
-  cdManifestRef?: string;
-  aiSummary?: string;
-}) {
+async function reject(crId: string, svc: Service, reason: string) {
+  await db
+    .update(services)
+    .set({ currentStatus: "rejected", updatedAt: new Date() })
+    .where(eq(services.id, svc.id));
+  await db
+    .update(changeRequests)
+    .set({ status: "rejected", updatedAt: new Date() })
+    .where(eq(changeRequests.id, crId));
   await db.insert(serviceRevisions).values({
     id: ulid(),
-    changeRequestId: args.changeRequestId,
-    serviceId: args.service.id,
-    serviceStatus: args.serviceStatus,
-    crStatus: args.crStatus,
-    ciPipelineRef: args.ciPipelineRef,
-    dockerfileSnapshot: args.dockerfileSnapshot,
-    cdManifestRef: args.cdManifestRef,
-    aiSummary: args.aiSummary,
+    changeRequestId: crId,
+    serviceId: svc.id,
+    serviceStatus: "rejected",
+    crStatus: "rejected",
+    aiSummary: `**Rejected by AI**: ${reason}\n\n**Current state**: Service unchanged.\n\n**Desired state**: (rejected — see reason above)`,
   });
+  return { state: "rejected", reason };
 }
