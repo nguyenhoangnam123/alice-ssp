@@ -58,6 +58,26 @@ async function runOnce() {
   await Promise.all(rows.map(probeOne));
 }
 
+/**
+ * Probe a single revision now, instead of waiting up to PROBE_INTERVAL_MS for the next
+ * scheduled tick. Called by the orchestrator the moment a revision flips to
+ * existence='created' so the UI shows a real health badge within seconds.
+ *
+ * Caller is expected to await OR fire-and-forget; we catch internally so a
+ * fire-and-forget invocation can't crash the orchestrator.
+ */
+export async function probeRevisionNow(rev: {
+  id: string;
+  serviceId: string;
+  routeHost: string | null;
+}) {
+  try {
+    await probeOne(rev);
+  } catch (err) {
+    console.error(`probeRevisionNow(${rev.id}) failed`, err);
+  }
+}
+
 async function probeOne(row: {
   id: string;
   serviceId: string;

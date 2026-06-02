@@ -9,6 +9,7 @@ import {
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { runPolicyGate } from "@/lib/policy/gate";
+import { probeRevisionNow } from "@/lib/workflow/prober";
 import { generateArtifacts, type AgentResult } from "@/lib/ai/agent";
 import { openFleetPr } from "@/lib/github/pr";
 
@@ -124,8 +125,6 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
   await transition(cr.id, "ai_validation_passed");
   await transition(cr.id, "ai_artifacts_generated");
 
-  // The revision row exists from this point on. Populate it with the AI's artifacts;
-  // the PR URL is added below when openFleetPr returns.
   // The revision exists from this point on with existence_status='created'. Route host
   // is captured here so the prober can start probing the moment the service goes live.
   const routeHost = deriveHost(svc, tenant);
@@ -140,6 +139,24 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
     dockerfileSnapshot: result.artifacts.dockerfile,
     ciPipelineRef: result.artifacts.ciPipelineRef,
   });
+
+  // Kick a probe now so the timeline shows a real health badge within seconds
+  // instead of waiting up to the prober's 60s interval. Fire-and-forget — a failed
+  // probe just updates the row to unhealthy and the periodic prober keeps retrying.
+  if (routeHost) {
+    const [createdRev] = await db
+      .select({ id: serviceRevisions.id })
+      .from(serviceRevisions)
+      .where(eq(serviceRevisions.changeRequestId, cr.id))
+      .limit(1);
+    if (createdRev) {
+      void probeRevisionNow({
+        id: createdRev.id,
+        serviceId: svc.id,
+        routeHost,
+      });
+    }
+  }
 
   // --- Step 3 — open the PR -------------------------------------------------------------
   const pr = await openFleetPr({
