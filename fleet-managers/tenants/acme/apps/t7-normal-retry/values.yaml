@@ -1,0 +1,31 @@
+tenant:
+  id: 84b02a25117e4b7fbaa1983b64
+  domain: acme
+  department: growth
+
+ssp:
+  serviceId: 01KT3FN78CWEWXJJK870JXWP4Q
+  changeRequestId: 01KT3FN78CQPAMWB5DVMFM355W
+
+replicaCount: 2
+
+image:
+  repository: "<AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/tenant-acme/t7-normal-retry"
+  tag: latest
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+route:
+  enabled: true
+  host: t7-retry.acme.ssp.mightybee.dev
+  vpnInternal: false
+  tls: true
+
+servicePort: 3000
