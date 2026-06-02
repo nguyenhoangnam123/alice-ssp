@@ -1,0 +1,38 @@
+tenant:
+  id: cbdbfcd6373448318d82ddc58d
+  domain: alice
+  department: platform
+
+ssp:
+  serviceId: 01KT4Q6TKEW49Q2HC7S2NW8PPT
+  changeRequestId: 01KT4Q6TKFJWJ7X65XW2FYPEJE
+
+replicaCount: 2
+
+image:
+  repository: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal
+  tag: "830ac14ad9aaa0b970dda2932e8083f5683afaa2"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+route:
+  enabled: true
+  host: api.alice.ssp.mightybee.dev
+  vpnInternal: false
+  tls:
+    enabled: true
+    termination: edge
+
+containerPort: 3000
+
+securityContext:
+  runAsUser: 10001
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
