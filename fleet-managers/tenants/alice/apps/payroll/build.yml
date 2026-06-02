@@ -1,0 +1,34 @@
+name: Build and Push payroll
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::195748744911:role/github-actions-ssp-payroll
+          aws-region: eu-west-1
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            195748744911.dkr.ecr.eu-west-1.amazonaws.com/payroll:${{ github.sha }}
+            195748744911.dkr.ecr.eu-west-1.amazonaws.com/payroll:latest
