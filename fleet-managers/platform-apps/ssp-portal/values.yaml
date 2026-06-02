@@ -59,12 +59,14 @@ ssp:
   changeRequestId: ""
   revisionId: "argocd-managed"
 
-# DB creds + GitHub PAT synced from AWS Secrets Manager by ESO.
+# DB creds + GitHub PAT + GitHub webhook HMAC secret synced from Secrets Manager by ESO.
 envFrom:
   - secretRef:
       name: portal-db
   - secretRef:
       name: portal-github
+  - secretRef:
+      name: portal-github-webhook
 
 env:
   - name: AUTH_MODE

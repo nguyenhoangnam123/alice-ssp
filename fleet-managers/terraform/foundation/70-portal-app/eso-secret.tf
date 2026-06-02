@@ -79,3 +79,39 @@ resource "kubectl_manifest" "portal_github_external_secret" {
   server_side_apply = true
   depends_on        = [kubernetes_namespace_v1.portal]
 }
+
+# Secret used by /api/webhooks/github to verify HMAC signatures on PR events.
+resource "kubectl_manifest" "portal_github_webhook_external_secret" {
+  yaml_body = yamlencode({
+    apiVersion = "external-secrets.io/v1beta1"
+    kind       = "ExternalSecret"
+    metadata = {
+      name      = "portal-github-webhook"
+      namespace = kubernetes_namespace_v1.portal.metadata[0].name
+    }
+    spec = {
+      refreshInterval = "1h"
+      secretStoreRef = {
+        name = "aws-secretsmanager"
+        kind = "ClusterSecretStore"
+      }
+      target = {
+        name           = "portal-github-webhook"
+        creationPolicy = "Owner"
+        template = {
+          engineVersion = "v2"
+          data = {
+            SSP_GITHUB_WEBHOOK_SECRET = "{{ .secret }}"
+          }
+        }
+      }
+      dataFrom = [{
+        extract = {
+          key = "ssp/portal/github-webhook"
+        }
+      }]
+    }
+  })
+  server_side_apply = true
+  depends_on        = [kubernetes_namespace_v1.portal]
+}
