@@ -25,7 +25,7 @@ variable "department" {
 
 variable "head_of_department" {
   type    = string
-  default = "ngminhhieu1510@gmail.com"
+  default = "namnh21894@gmail.com"
 }
 
 variable "cost_center" {

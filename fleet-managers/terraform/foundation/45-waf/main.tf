@@ -41,6 +41,67 @@ resource "aws_wafv2_web_acl" "public_alb" {
     metric_name                = "ssp_public_alb"
   }
 
+  # ----- Allow-list at priority 1 --------------------------------------------------------
+  # Allow action terminates rule evaluation — webhook endpoints (signed payloads verified
+  # by the app's HMAC check) skip the managed rule groups so legitimate PR payloads
+  # containing code-like content (SQL-ish strings, shell snippets) aren't blocked.
+  rule {
+    name     = "AllowWebhookEndpoints"
+    priority = 1
+    action {
+      allow {}
+    }
+    statement {
+      byte_match_statement {
+        positional_constraint = "STARTS_WITH"
+        search_string         = "/api/webhooks/"
+        field_to_match {
+          uri_path {}
+        }
+        text_transformation {
+          priority = 0
+          type     = "NONE"
+        }
+      }
+    }
+    visibility_config {
+      sampled_requests_enabled   = true
+      cloudwatch_metrics_enabled = true
+      metric_name                = "webhook_allow"
+    }
+  }
+
+  # ArgoCD UI also bypasses the managed rules. ArgoCD has its own RBAC + login; the API
+  # JSON payloads frequently include code-like strings (sync hooks, k8s manifests) that
+  # false-trigger CommonRuleSet / SQLi rules. The hostname is locked to argocd.ssp.mightybee.dev.
+  rule {
+    name     = "AllowArgoCDHost"
+    priority = 5
+    action {
+      allow {}
+    }
+    statement {
+      byte_match_statement {
+        positional_constraint = "EXACTLY"
+        search_string         = "argocd.ssp.mightybee.dev"
+        field_to_match {
+          single_header {
+            name = "host"
+          }
+        }
+        text_transformation {
+          priority = 0
+          type     = "LOWERCASE"
+        }
+      }
+    }
+    visibility_config {
+      sampled_requests_enabled   = true
+      cloudwatch_metrics_enabled = true
+      metric_name                = "argocd_allow"
+    }
+  }
+
   # ----- AWS managed rule groups ---------------------------------------------------------
   rule {
     name     = "AWSManagedRulesCommonRuleSet"
