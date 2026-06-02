@@ -3,10 +3,10 @@
 
 image:
   repository: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal
-  tag: latest
-  # MVP1 ships `:latest` and forces a re-pull on every rollout. MVP2 should pin to
-  # the commit SHA pushed by the GitHub Actions build so this can drop back to IfNotPresent.
-  pullPolicy: Always
+  # Pinned to the commit SHA produced by the build-portal workflow. Bumping this is the
+  # single source of truth for "deploy this new portal version" — ArgoCD reconciles it.
+  tag: "50ff8ae12f3d22e2bdc39c561cd33537576fa491"
+  pullPolicy: IfNotPresent
 
 replicaCount: 1
 
