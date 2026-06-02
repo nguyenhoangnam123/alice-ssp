@@ -79,18 +79,22 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
     .orderBy(desc(serviceRevisions.createdAt))
     .limit(50);
 
-  // Serialize for the client component (Date → ISO string).
+  // Serialize for the client component (Date → ISO string, widen enum types to string).
   const revisionsForClient = revs.map((r) => ({
     id: r.id,
-    serviceStatus: r.serviceStatus,
-    crStatus: r.crStatus,
+    serviceStatus: r.serviceStatus as string,
+    crStatus: r.crStatus as string,
     aiSummary: r.aiSummary,
     cdManifestRef: r.cdManifestRef,
     dockerfileSnapshot: r.dockerfileSnapshot,
     ciPipelineRef: r.ciPipelineRef,
     createdAt: r.createdAt.toISOString(),
     crSummary: r.crSummary,
-    crStatusHistory: r.crStatusHistory ?? [],
+    crStatusHistory: (r.crStatusHistory ?? []) as {
+      status: string;
+      at: string;
+      detail?: string;
+    }[],
   }));
 
   return (
