@@ -21,8 +21,12 @@ export function startProber() {
   if (started) return;
   started = true;
 
-  if (process.env.PROBER_DISABLED === "true") {
-    console.log("prober disabled via PROBER_DISABLED env");
+  // Opt-IN. The same image runs in tenant pods (as a placeholder until tenants ship
+  // their own apps), and we don't want every tenant pod spinning up a duplicate
+  // prober trying to reach a DATABASE_URL it doesn't have. Only the portal
+  // deployment sets SSP_PORTAL_PROBER=true in its values.yaml.
+  if (process.env.SSP_PORTAL_PROBER !== "true") {
+    console.log("prober: skipping (SSP_PORTAL_PROBER!=true)");
     return;
   }
 

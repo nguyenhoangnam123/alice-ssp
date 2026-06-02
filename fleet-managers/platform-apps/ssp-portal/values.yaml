@@ -93,3 +93,8 @@ env:
     value: "alice-ssp"
   - name: FLEET_REPO_BASE_BRANCH
     value: "main"
+  # Only this deployment runs the readiness prober — tenant pods that happen to
+  # boot from the same image must not start a duplicate, or they'd spam
+  # ECONNREFUSED against a DATABASE_URL they don't have.
+  - name: SSP_PORTAL_PROBER
+    value: "true"
