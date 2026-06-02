@@ -18,9 +18,12 @@ const createServiceSchema = z.object({
     .string()
     .min(1)
     .regex(/^[a-z0-9-]+$/, "name must be lowercase letters/digits/hyphens"),
+  // Allow dots so a tenant can pin a fully-qualified domain (e.g. hr.mightybee.dev) when
+  // they own the parent zone. With no dots, the platform convention applies:
+  // <subdomain>.<tenant.domain>.ssp.mightybee.dev.
   subdomain: z
     .string()
-    .regex(/^[a-z0-9-]*$/)
+    .regex(/^[a-z0-9.-]*$/)
     .optional()
     .nullable(),
   vpn_internal: z.boolean().default(true),

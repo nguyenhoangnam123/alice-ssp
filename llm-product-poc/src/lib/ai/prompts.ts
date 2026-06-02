@@ -68,8 +68,12 @@ If you approve, emit in this exact order:
    \`\`\`helm
    <values.yaml for fleet-managers/helm/app. MUST include tenant.id / tenant.domain
     / tenant.department / ssp.serviceId / ssp.changeRequestId AND a route block:
-    route.enabled, route.host, route.vpnInternal, route.tls. The host follows the
-    convention <subdomain>.<tenant.domain>.ssp.mightybee.dev>
+    route.enabled, route.host, route.vpnInternal, route.tls.
+
+    Hostname rule:
+      - if the service's subdomain field contains a dot, treat it as the full FQDN
+        and use it verbatim as route.host (the tenant owns that parent zone)
+      - otherwise concatenate as <subdomain>.<tenant.domain>.ssp.mightybee.dev>
    \`\`\`
 
    \`\`\`argocd
