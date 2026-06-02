@@ -146,9 +146,13 @@ export const serviceRevisions = pgTable(
       .references(() => services.id, { onDelete: "cascade" }),
     serviceStatus: serviceStatus("service_status").notNull(),
     crStatus: changeRequestStatus("cr_status").notNull(),
-    ciPipelineRef: text("ci_pipeline_ref"),       // ref into the app repo workflow
-    dockerfileSnapshot: text("dockerfile_snapshot"), // frozen content
-    cdManifestRef: text("cd_manifest_ref"),       // PR url / SHA / path in fleet-managers
+    // Workflow step name — one revision per step in the orchestrator. Values:
+    // policy_gate_passed, policy_gate_rejected, ai_validation_passed, ai_validation_rejected,
+    // ai_artifacts_generated, pr_opened, pr_merged.
+    step: text("step"),
+    ciPipelineRef: text("ci_pipeline_ref"),
+    dockerfileSnapshot: text("dockerfile_snapshot"),
+    cdManifestRef: text("cd_manifest_ref"),
     aiSummary: text("ai_summary"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

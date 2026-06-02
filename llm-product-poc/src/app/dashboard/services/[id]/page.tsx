@@ -69,6 +69,7 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
   // Serialize for the client component (Date → ISO string).
   const revisionsForClient = revs.map((r) => ({
     id: r.id,
+    step: r.step,
     serviceStatus: r.serviceStatus,
     crStatus: r.crStatus,
     aiSummary: r.aiSummary,
