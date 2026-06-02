@@ -1,0 +1,31 @@
+tenant:
+  id: cbdbfcd6373448318d82ddc58d
+  domain: alice
+  department: platform
+
+ssp:
+  serviceId: 01KT4Q80SYFAP82F1BAFZME0C6
+  changeRequestId: 01KT4Q80SZKM2GVTV62F8PC81P
+
+replicaCount: 1
+
+image:
+  repository: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal
+  tag: "830ac14ad9aaa0b970dda2932e8083f5683afaa2"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+route:
+  enabled: true
+  host: payroll.alice.ssp.mightybee.dev
+  vpnInternal: true
+  tls:
+    enabled: true
+    termination: edge
