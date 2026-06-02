@@ -9,8 +9,33 @@ ssp:
 
 replicaCount: 1
 
-# Reusing the platform portal image as the hr-portal runtime — Next.js standalone server
-# reads PORT from env; the chart's service.port (8080 default) wires the rest.
+# Reusing the platform portal image. Needs DATABASE_URL + a few literal env vars to boot
+# without throwing on /login. The ExternalSecret below syncs the platform's portal-db
+# Secrets Manager entry into this namespace (MVP2: each tenant gets its own DB).
+externalSecrets:
+  - name: portal-db
+    secretStoreRef:
+      name: aws-secretsmanager
+      kind: ClusterSecretStore
+    target:
+      name: portal-db
+      template:
+        engineVersion: v2
+        data:
+          DATABASE_URL: "{{ .url }}"
+          DB_HOST: "{{ .host }}"
+          DB_PORT: "{{ .port }}"
+          DB_USER: "{{ .username }}"
+          DB_PASSWORD: "{{ .password }}"
+          DB_NAME: "{{ .database }}"
+    dataFrom:
+      - extract:
+          key: ssp/portal/db
+
+envFrom:
+  - secretRef:
+      name: portal-db
+
 env:
   - name: PORT
     value: "8080"
@@ -18,6 +43,12 @@ env:
     value: "0.0.0.0"
   - name: NODE_ENV
     value: "production"
+  - name: AUTH_MODE
+    value: "stub"
+  - name: AI_MODE
+    value: "mock"
+  - name: WORKFLOW_MODE
+    value: "in-process"
 
 image:
   repository: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal

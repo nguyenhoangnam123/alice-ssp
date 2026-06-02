@@ -22,6 +22,15 @@ ingress:
     enabled: false
     issuer: "letsencrypt-prod"
 
+# Each item renders one ExternalSecret. See helm/app/templates/external-secrets.yaml.
+# Example:
+#   externalSecrets:
+#     - name: app-db
+#       secretStoreRef: { name: aws-secretsmanager, kind: ClusterSecretStore }
+#       target: { name: app-db }
+#       dataFrom: [{ extract: { key: ssp/<tenant>/<app>/db } }]
+externalSecrets: []
+
 # Gateway API HTTPRoute (MVP2 — kept so per-service rollout is one value flip).
 route:
   enabled: false
