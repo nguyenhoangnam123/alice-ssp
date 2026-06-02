@@ -178,6 +178,12 @@ export async function markProvisioned(changeRequestId: string) {
 
   await transition(cr.id, "applied", "PR merged + ArgoCD synced");
   await setServiceStatus(cr.serviceId, "working");
+  // Flip the revision's CR-status mirror to applied so the UI badge tracks it. Existence
+  // already 'created' from the platform_reviewing step; the prober owns health from here.
+  await db
+    .update(serviceRevisions)
+    .set({ crStatus: "applied", serviceStatus: "working" })
+    .where(eq(serviceRevisions.changeRequestId, cr.id));
 }
 
 // ----- helpers -------------------------------------------------------------------------
