@@ -3,9 +3,10 @@
 import { useState } from "react";
 import clsx from "clsx";
 
+type StatusEvent = { status: string; at: string; detail?: string };
+
 type Revision = {
   id: string;
-  step: string | null;
   serviceStatus: string;
   crStatus: string;
   aiSummary: string | null;
@@ -13,21 +14,23 @@ type Revision = {
   dockerfileSnapshot: string | null;
   ciPipelineRef: string | null;
   createdAt: string;
+  crSummary: string;
+  crStatusHistory: StatusEvent[];
 };
 
-// Cosmetic mapping from the orchestrator's step enum to a label + colour. New steps
-// just need an entry here.
-const STEP_META: Record<
+const STATUS_META: Record<
   string,
   { label: string; tone: "ok" | "info" | "warn" | "fail"; icon: string }
 > = {
+  submitted: { label: "Submitted", tone: "info", icon: "•" },
   policy_gate_passed: { label: "Policy gate passed", tone: "ok", icon: "✓" },
   policy_gate_rejected: { label: "Policy gate rejected", tone: "fail", icon: "✕" },
   ai_validation_passed: { label: "AI validation passed", tone: "ok", icon: "✓" },
   ai_validation_rejected: { label: "AI validation rejected", tone: "fail", icon: "✕" },
   ai_artifacts_generated: { label: "AI artifacts generated", tone: "info", icon: "✎" },
-  pr_opened: { label: "PR opened", tone: "info", icon: "↗" },
-  pr_merged: { label: "PR merged + synced", tone: "ok", icon: "✓" },
+  platform_reviewing: { label: "Platform reviewing", tone: "warn", icon: "⏳" },
+  applied: { label: "Applied / integrated", tone: "ok", icon: "✓" },
+  rejected: { label: "Rejected", tone: "fail", icon: "✕" },
 };
 
 const TONE_CLASS: Record<string, string> = {
@@ -38,9 +41,9 @@ const TONE_CLASS: Record<string, string> = {
 };
 
 /**
- * Accordion timeline showing the workflow as discrete steps. One row per step
- * (`service_revisions.step`). Click a row to expand its body; clicking again or
- * another row collapses the previous one.
+ * One row per ChangeRequest (1:1 with ServiceRevision). The row header shows the CR
+ * summary + the current CR status badge. Expanded body reveals the full status_history
+ * workflow timeline + the revision's artifacts.
  */
 export function RevisionsTimeline({ revisions }: { revisions: Revision[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(
@@ -57,11 +60,7 @@ export function RevisionsTimeline({ revisions }: { revisions: Revision[] }) {
     <ol className="border-l border-border pl-0 space-y-2">
       {revisions.map((r) => {
         const open = expandedId === r.id;
-        const meta = (r.step && STEP_META[r.step]) || {
-          label: r.serviceStatus,
-          tone: "info" as const,
-          icon: "•",
-        };
+        const meta = STATUS_META[r.crStatus] ?? STATUS_META.submitted;
         const { current, desired, summary, reason } = parseSummary(r.aiSummary);
         return (
           <li key={r.id} className="border border-border rounded">
@@ -81,9 +80,10 @@ export function RevisionsTimeline({ revisions }: { revisions: Revision[] }) {
               <span className="font-mono text-xs text-muted w-44 shrink-0">
                 {new Date(r.createdAt).toLocaleString()}
               </span>
+              <span className="text-sm">{r.crSummary}</span>
               <span
                 className={clsx(
-                  "inline-flex items-center gap-1 text-xs px-2 py-0.5 border rounded",
+                  "inline-flex items-center gap-1 text-xs px-2 py-0.5 border rounded ml-2",
                   TONE_CLASS[meta.tone],
                 )}
               >
@@ -101,12 +101,12 @@ export function RevisionsTimeline({ revisions }: { revisions: Revision[] }) {
             </button>
 
             {open && (
-              <div className="border-t border-border px-3 py-3 space-y-3 text-sm">
+              <div className="border-t border-border px-3 py-3 space-y-4 text-sm">
+                <StatusTimeline events={r.crStatusHistory} />
+
                 {reason && (
                   <div className="text-sm text-red-300">
-                    <span className="text-xs text-muted block mb-1">
-                      Reason
-                    </span>
+                    <div className="text-xs text-muted mb-1">Reason</div>
                     {reason}
                   </div>
                 )}
@@ -126,7 +126,7 @@ export function RevisionsTimeline({ revisions }: { revisions: Revision[] }) {
 
                 {summary && (
                   <div>
-                    <div className="text-xs text-muted mb-1">Detail</div>
+                    <div className="text-xs text-muted mb-1">AI summary</div>
                     <div className="text-sm whitespace-pre-wrap">{summary}</div>
                   </div>
                 )}
@@ -159,10 +159,41 @@ export function RevisionsTimeline({ revisions }: { revisions: Revision[] }) {
   );
 }
 
-/**
- * The AI summary is markdown. Parse out **Current state**, **Desired state**, the
- * remainder ("Summary"/"Detail"), and an optional **Reason** for rejection steps.
- */
+function StatusTimeline({ events }: { events: StatusEvent[] }) {
+  if (!events || events.length === 0) {
+    return <p className="text-muted text-xs">(no status history)</p>;
+  }
+  return (
+    <div>
+      <div className="text-xs text-muted mb-2">Workflow timeline</div>
+      <ol className="space-y-1">
+        {events.map((e, i) => {
+          const meta = STATUS_META[e.status] ?? STATUS_META.submitted;
+          return (
+            <li key={i} className="flex items-center gap-3 text-sm">
+              <span className="font-mono text-xs text-muted w-40 shrink-0">
+                {new Date(e.at).toLocaleTimeString()}
+              </span>
+              <span
+                className={clsx(
+                  "inline-flex items-center gap-1 text-xs px-2 py-0.5 border rounded",
+                  TONE_CLASS[meta.tone],
+                )}
+              >
+                <span>{meta.icon}</span>
+                <span>{meta.label}</span>
+              </span>
+              {e.detail && (
+                <span className="text-xs text-muted truncate">{e.detail}</span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
 function parseSummary(raw: string | null): {
   current: string;
   desired: string;
@@ -170,7 +201,6 @@ function parseSummary(raw: string | null): {
   reason: string;
 } {
   if (!raw) return { current: "", desired: "", summary: "", reason: "" };
-
   const grab = (label: string): string => {
     const re = new RegExp(
       `\\*\\*${label}\\*\\*\\s*:?\\s*([\\s\\S]*?)(?=\\n\\s*\\*\\*[A-Z][a-zA-Z ]+\\*\\*\\s*:?|$)`,
@@ -178,12 +208,9 @@ function parseSummary(raw: string | null): {
     );
     return raw.match(re)?.[1]?.trim() ?? "";
   };
-
   const reason = grab("Reason");
   const current = grab("Current state");
   const desired = grab("Desired state");
-
-  // Anything that's not one of the named sections is the "detail" body.
   let summary = raw;
   for (const label of ["Step", "Reason", "Current state", "Desired state"]) {
     const re = new RegExp(
