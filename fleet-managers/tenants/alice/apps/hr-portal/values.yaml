@@ -1,0 +1,38 @@
+tenant:
+  id: cbdbfcd6373448318d82ddc58d
+  domain: alice
+  department: platform
+
+ssp:
+  serviceId: 01KT3Y7PYW9EKWQ93VEHE36QQN
+  changeRequestId: 01KT3Y7PYXA5XFNMWCBGW0TDYT
+
+replicaCount: 2
+
+image:
+  repository: 471112855190.dkr.ecr.ap-southeast-1.amazonaws.com/alice/hr-portal
+  tag: latest
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+route:
+  enabled: true
+  host: hr.mightybee.dev
+  vpnInternal: false
+  tls:
+    enabled: true
+    mode: edge
+
+containerPort: 3000
+
+securityContext:
+  runAsUser: 10001
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
