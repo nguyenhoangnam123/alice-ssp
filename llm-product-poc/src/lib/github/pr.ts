@@ -74,11 +74,16 @@ export async function openFleetPr(args: {
   }
 
   const baseDir = `fleet-managers/tenants/${args.tenant.domain}/apps/${args.service.name}`;
+  // App-of-Apps watches fleet-managers/argocd/ recursively — the Application MUST live
+  // there for ArgoCD to pick it up on merge. The other three artifacts stay alongside
+  // the values they describe (under tenants/<>/apps/<>/) — they're referenced by the
+  // Application's source.helm.valueFiles.
+  const argocdAppPath = `fleet-managers/argocd/apps/${args.tenant.domain}-${args.service.name}.yaml`;
   const files: Array<{ path: string; content: string }> = [
     { path: `${baseDir}/values.yaml`, content: args.artifacts.helmValues },
     { path: `${baseDir}/Dockerfile`, content: args.artifacts.dockerfile },
     { path: `${baseDir}/build.yml`, content: args.artifacts.ciWorkflow },
-    { path: `${baseDir}/application.yaml`, content: args.artifacts.argocdApp },
+    { path: argocdAppPath, content: args.artifacts.argocdApp },
   ];
 
   const tree = await gh.git.createTree({
@@ -141,10 +146,10 @@ function renderPrBody(args: {
 
 ### Files in this PR
 
-- \`fleet-managers/tenants/${args.tenant.domain}/apps/${args.service.name}/values.yaml\`
+- \`fleet-managers/tenants/${args.tenant.domain}/apps/${args.service.name}/values.yaml\` *(Helm values)*
 - \`fleet-managers/tenants/${args.tenant.domain}/apps/${args.service.name}/Dockerfile\` *(frozen snapshot for review)*
-- \`fleet-managers/tenants/${args.tenant.domain}/apps/${args.service.name}/build.yml\`
-- \`fleet-managers/tenants/${args.tenant.domain}/apps/${args.service.name}/application.yaml\` *(ArgoCD Application — app-of-apps for the tenant)*
+- \`fleet-managers/tenants/${args.tenant.domain}/apps/${args.service.name}/build.yml\` *(CI workflow)*
+- \`fleet-managers/argocd/apps/${args.tenant.domain}-${args.service.name}.yaml\` *(ArgoCD Application — root App-of-Apps auto-discovers on merge)*
 
 ### AI agent output
 

@@ -12,7 +12,9 @@ data "terraform_remote_state" "dns" {
 }
 
 locals {
-  portal_cert_arn = data.terraform_remote_state.dns.outputs.portal_certificate_arn
+  # Wildcard covers every <subdomain>.ssp.mightybee.dev (portal, hr, future tenants).
+  # The per-host portal cert is still present in 15-dns but no longer attached.
+  wildcard_cert_arn = data.terraform_remote_state.dns.outputs.wildcard_certificate_arn
 }
 
 # Default target group config — IP targets. Pod IPs become ALB targets directly, skipping
@@ -52,7 +54,7 @@ resource "kubectl_manifest" "lbconfig_public" {
       listenerConfigurations = [
         {
           protocolPort       = "HTTPS:443"
-          defaultCertificate = local.portal_cert_arn
+          defaultCertificate = local.wildcard_cert_arn
         },
         {
           protocolPort = "HTTP:80"
