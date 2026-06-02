@@ -1,0 +1,39 @@
+tenant:
+  id: "84b02a25117e4b7fbaa1983b64"
+  domain: "acme"
+  department: "growth"
+
+ssp:
+  serviceId: "01KT3E8W00K1VTFGKFE1R2FMDY"
+  changeRequestId: "01KT3E8W00T50CY7YAD4W6AQMS"
+
+replicaCount: 2
+
+image:
+  repository: 084502a25117.dkr.ecr.us-east-1.amazonaws.com/acme/approved-svc
+  tag: latest
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+route:
+  enabled: true
+  host: approved-svc.acme.ssp.mightybee.dev
+  vpnInternal: false
+  tls: true
+
+serviceAccount:
+  create: true
+  name: approved-svc
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+
+containerPort: 3000

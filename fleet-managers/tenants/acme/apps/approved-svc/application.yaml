@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: acme-approved-svc
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nguyenhoangnam123/alice-ssp.git
+    targetRevision: main
+    path: fleet-managers/helm/app
+    helm:
+      valueFiles:
+        - "../../tenants/acme/apps/approved-svc/values.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tenant-acme
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
