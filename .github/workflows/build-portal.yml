@@ -44,8 +44,9 @@ jobs:
           tags: |
             ${{ env.ECR_REPO }}:${{ github.sha }}
             ${{ env.ECR_REPO }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # No cache for now — the gha cache was serving stale agent.ts bundles. Builds are
+          # ~3min uncached vs ~1min cached; acceptable trade for correctness.
+          no-cache: true
 
       - name: Output image reference
         run: echo "image=${{ env.ECR_REPO }}:${{ github.sha }}" >> $GITHUB_OUTPUT
