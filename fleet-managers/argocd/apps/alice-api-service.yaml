@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: api-service
+  name: alice-api-service
   namespace: argocd
 spec:
   project: default
