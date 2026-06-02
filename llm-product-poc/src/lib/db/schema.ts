@@ -159,6 +159,18 @@ export const serviceRevisions = pgTable(
       .references(() => services.id, { onDelete: "cascade" }),
     serviceStatus: serviceStatus("service_status").notNull(),
     crStatus: changeRequestStatus("cr_status").notNull(),
+    // Existence: did the CR produce a viable revision (created) or was it rejected (rejected).
+    // null while still in flight (pre-policy-gate or pre-AI-validation outcome).
+    existenceStatus: text("existence_status").$type<"created" | "rejected" | null>(),
+    // Readiness: result of the periodic HTTP probe against route_host. unknown until the
+    // first probe completes; healthy/unhealthy after.
+    healthStatus: text("health_status")
+      .$type<"healthy" | "unhealthy" | "unknown">()
+      .notNull()
+      .default("unknown"),
+    lastProbedAt: timestamp("last_probed_at", { withTimezone: true }),
+    // The FQDN this revision claims (route.host). Probed every ~60s by the prober.
+    routeHost: text("route_host"),
     ciPipelineRef: text("ci_pipeline_ref"),
     dockerfileSnapshot: text("dockerfile_snapshot"),
     cdManifestRef: text("cd_manifest_ref"),

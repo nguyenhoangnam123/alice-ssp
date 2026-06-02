@@ -74,6 +74,7 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
       svcId: svc.id,
       svcStatus: "rejected",
       crStatus: "policy_gate_rejected",
+      existenceStatus: "rejected",
       aiSummary: `**Step**: Policy gate rejected\n\n**Reason**: ${gate.violations.join("; ")}\n\n**Current state**: Service unchanged.\n\n**Desired state**: (rejected — see reason above)`,
     });
     return { state: "rejected", reason: gate.violations.join("; ") };
@@ -100,6 +101,7 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
       svcId: svc.id,
       svcStatus: "rejected",
       crStatus: "ai_validation_rejected",
+      existenceStatus: "rejected",
       aiSummary: `**Step**: AI agent error\n\n**Reason**: ${msg}`,
     });
     return { state: "rejected", reason: `AI agent error: ${msg}` };
@@ -113,6 +115,7 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
       svcId: svc.id,
       svcStatus: "rejected",
       crStatus: "ai_validation_rejected",
+      existenceStatus: "rejected",
       aiSummary: `**Step**: AI validation rejected\n\n**Reason**: ${result.reason}\n\n**Current state**: Service unchanged.\n\n**Desired state**: (rejected — see reason above)`,
     });
     return { state: "rejected", reason: result.reason };
@@ -123,11 +126,16 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
 
   // The revision row exists from this point on. Populate it with the AI's artifacts;
   // the PR URL is added below when openFleetPr returns.
+  // The revision exists from this point on with existence_status='created'. Route host
+  // is captured here so the prober can start probing the moment the service goes live.
+  const routeHost = deriveHost(svc, tenant);
   await upsertRevision({
     crId: cr.id,
     svcId: svc.id,
     svcStatus: "aiReview",
     crStatus: "ai_artifacts_generated",
+    existenceStatus: "created",
+    routeHost,
     aiSummary: result.artifacts.summary,
     dockerfileSnapshot: result.artifacts.dockerfile,
     ciPipelineRef: result.artifacts.ciPipelineRef,
@@ -148,6 +156,8 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
     svcId: svc.id,
     svcStatus: "platformReview",
     crStatus: "platform_reviewing",
+    existenceStatus: "created",
+    routeHost,
     aiSummary: result.artifacts.summary,
     dockerfileSnapshot: result.artifacts.dockerfile,
     ciPipelineRef: result.artifacts.ciPipelineRef,
@@ -185,6 +195,18 @@ async function transition(crId: string, newStatus: CrStatus, detail?: string) {
     .where(eq(changeRequests.id, crId));
 }
 
+function deriveHost(
+  svc: { name: string; subdomain: string | null },
+  tenant: { domain: string },
+): string | null {
+  if (!svc.subdomain) return null;
+  // FQDN convention from prompts.ts: if subdomain contains a dot, use it verbatim;
+  // otherwise concat to the SSP zone.
+  return svc.subdomain.includes(".")
+    ? svc.subdomain
+    : `${svc.subdomain}.${tenant.domain}.ssp.mightybee.dev`;
+}
+
 async function setServiceStatus(svcId: string, status: SvcStatus) {
   await db
     .update(services)
@@ -197,33 +219,35 @@ async function upsertRevision(args: {
   svcId: string;
   svcStatus: SvcStatus;
   crStatus: CrStatus;
+  existenceStatus?: "created" | "rejected" | null;
+  routeHost?: string | null;
   aiSummary?: string;
   ciPipelineRef?: string;
   dockerfileSnapshot?: string;
   cdManifestRef?: string;
 }) {
+  const updates = {
+    serviceStatus: args.svcStatus,
+    crStatus: args.crStatus,
+    aiSummary: args.aiSummary,
+    ciPipelineRef: args.ciPipelineRef,
+    dockerfileSnapshot: args.dockerfileSnapshot,
+    cdManifestRef: args.cdManifestRef,
+    ...(args.existenceStatus !== undefined
+      ? { existenceStatus: args.existenceStatus }
+      : {}),
+    ...(args.routeHost !== undefined ? { routeHost: args.routeHost } : {}),
+  };
   await db
     .insert(serviceRevisions)
     .values({
       id: ulid(),
       changeRequestId: args.crId,
       serviceId: args.svcId,
-      serviceStatus: args.svcStatus,
-      crStatus: args.crStatus,
-      aiSummary: args.aiSummary,
-      ciPipelineRef: args.ciPipelineRef,
-      dockerfileSnapshot: args.dockerfileSnapshot,
-      cdManifestRef: args.cdManifestRef,
+      ...updates,
     })
     .onConflictDoUpdate({
       target: serviceRevisions.changeRequestId,
-      set: {
-        serviceStatus: args.svcStatus,
-        crStatus: args.crStatus,
-        aiSummary: args.aiSummary,
-        ciPipelineRef: args.ciPipelineRef,
-        dockerfileSnapshot: args.dockerfileSnapshot,
-        cdManifestRef: args.cdManifestRef,
-      },
+      set: updates,
     });
 }

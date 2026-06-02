@@ -9,6 +9,10 @@ type Revision = {
   id: string;
   serviceStatus: string;
   crStatus: string;
+  existenceStatus: "created" | "rejected" | null;
+  healthStatus: "healthy" | "unhealthy" | "unknown";
+  lastProbedAt: string | null;
+  routeHost: string | null;
   aiSummary: string | null;
   cdManifestRef: string | null;
   dockerfileSnapshot: string | null;
@@ -90,6 +94,12 @@ export function RevisionsTimeline({ revisions }: { revisions: Revision[] }) {
                 <span>{meta.icon}</span>
                 <span>{meta.label}</span>
               </span>
+              <ExistenceBadge value={r.existenceStatus} />
+              <HealthBadge
+                existence={r.existenceStatus}
+                value={r.healthStatus}
+                lastProbedAt={r.lastProbedAt}
+              />
               <span
                 className={clsx(
                   "ml-auto text-muted text-xs transition-transform",
@@ -102,6 +112,24 @@ export function RevisionsTimeline({ revisions }: { revisions: Revision[] }) {
 
             {open && (
               <div className="border-t border-border px-3 py-3 space-y-4 text-sm">
+                {r.routeHost && (
+                  <div className="text-xs text-muted">
+                    Route:{" "}
+                    <a
+                      href={`https://${r.routeHost}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono"
+                    >
+                      {r.routeHost}
+                    </a>
+                    {r.lastProbedAt && (
+                      <span className="ml-2">
+                        · last probed {new Date(r.lastProbedAt).toLocaleTimeString()}
+                      </span>
+                    )}
+                  </div>
+                )}
                 <StatusTimeline events={r.crStatusHistory} />
 
                 {reason && (
@@ -156,6 +184,59 @@ export function RevisionsTimeline({ revisions }: { revisions: Revision[] }) {
         );
       })}
     </ol>
+  );
+}
+
+function ExistenceBadge({ value }: { value: "created" | "rejected" | null }) {
+  if (value === null) return null;
+  const tone = value === "created" ? "ok" : "fail";
+  const label = value === "created" ? "exists" : "rejected";
+  const icon = value === "created" ? "●" : "✕";
+  return (
+    <span
+      title={`Existence: ${value} — set by orchestrator from CR workflow outcome`}
+      className={clsx(
+        "inline-flex items-center gap-1 text-xs px-2 py-0.5 border rounded",
+        TONE_CLASS[tone],
+      )}
+    >
+      <span>{icon}</span>
+      <span>{label}</span>
+    </span>
+  );
+}
+
+function HealthBadge({
+  existence,
+  value,
+  lastProbedAt,
+}: {
+  existence: "created" | "rejected" | null;
+  value: "healthy" | "unhealthy" | "unknown";
+  lastProbedAt: string | null;
+}) {
+  // Hide health for rejected revisions — readiness only applies once the revision exists.
+  if (existence !== "created") return null;
+  const meta =
+    value === "healthy"
+      ? { tone: "ok", label: "healthy", icon: "♥" }
+      : value === "unhealthy"
+        ? { tone: "fail", label: "unhealthy", icon: "✕" }
+        : { tone: "info", label: "probing", icon: "?" };
+  const tip = lastProbedAt
+    ? `Readiness: ${value} (probed ${new Date(lastProbedAt).toLocaleString()})`
+    : "Readiness: not yet probed";
+  return (
+    <span
+      title={tip}
+      className={clsx(
+        "inline-flex items-center gap-1 text-xs px-2 py-0.5 border rounded",
+        TONE_CLASS[meta.tone],
+      )}
+    >
+      <span>{meta.icon}</span>
+      <span>{meta.label}</span>
+    </span>
   );
 }
 
