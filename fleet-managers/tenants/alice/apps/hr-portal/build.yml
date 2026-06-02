@@ -1,0 +1,35 @@
+name: build-hr-portal
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/hr-portal/**'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-west-1
+  ECR_REPO: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::195748744911:role/github-actions-ecr-push
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push
+        run: |
+          IMAGE_TAG="${{ github.sha }}"
+          docker build -t $ECR_REPO:$IMAGE_TAG services/hr-portal
+          docker push $ECR_REPO:$IMAGE_TAG

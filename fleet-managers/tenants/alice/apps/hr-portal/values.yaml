@@ -1,0 +1,42 @@
+tenant:
+  id: cbdbfcd6373448318d82ddc58d
+  domain: alice
+  department: platform
+
+ssp:
+  serviceId: 01KT4C1J38QRRMZBVYT6BNH93D
+  changeRequestId: 01KT4C1J39PXEXKK45WTDP5XA9
+
+replicaCount: 1
+
+image:
+  repository: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal
+  tag: "6a860a77fd16afadf98494f74948c1110cf9e4a9"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+route:
+  enabled: true
+  host: hr.ssp.mightybee.dev
+  vpnInternal: false
+  tls:
+    enabled: true
+    mode: edge
+
+serviceAccount:
+  create: true
+  name: hr-portal
+
+podSecurityContext:
+  runAsUser: 10000
+  runAsGroup: 10000
+  runAsNonRoot: true
+
+containerPort: 8080
