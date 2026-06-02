@@ -79,7 +79,13 @@ If you approve, emit in this exact order:
 
    \`\`\`argocd
    <ArgoCD Application manifest (apiVersion: argoproj.io/v1alpha1, kind: Application).
-    metadata.namespace=argocd, project=default,
+    metadata.name=<tenant.domain>-<service.name>  (MUST be exactly this — deterministic;
+      hot-fix CRs against the same service must reuse this name, NEVER pick a different
+      one, otherwise app-of-apps creates a duplicate and orphans the prior resources).
+    metadata.namespace=argocd,
+    metadata.finalizers=["resources-finalizer.argocd.argoproj.io"]  (so cascade-delete
+      removes children if the Application is ever removed),
+    project=default,
     source.repoURL=https://github.com/nguyenhoangnam123/alice-ssp.git,
     source.targetRevision=main,
     source.path=fleet-managers/helm/app,

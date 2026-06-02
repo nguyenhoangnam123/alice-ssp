@@ -228,6 +228,8 @@ kind: Application
 metadata:
   name: ${tenant.domain}-${slug}
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:

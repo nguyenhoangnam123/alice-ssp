@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { serviceRevisions, services } from "@/lib/db/schema";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 /**
  * Periodic readiness prober.
@@ -39,23 +39,29 @@ export function startProber() {
 }
 
 async function runOnce() {
-  const rows = await db
-    .select({
-      id: serviceRevisions.id,
-      serviceId: serviceRevisions.serviceId,
-      routeHost: serviceRevisions.routeHost,
-    })
-    .from(serviceRevisions)
-    .where(
-      and(
-        eq(serviceRevisions.existenceStatus, "created"),
-        isNotNull(serviceRevisions.routeHost),
-      ),
-    );
+  // Only probe the LATEST revision per service. Older revisions are historical: their
+  // route_host may have been replaced (e.g. hot-fix CR changed the FQDN), so keeping the
+  // probe running against a dead host would update the same row to 'unhealthy' forever
+  // AND clobber service.currentStatus via the mirror. The latest revision is the one that
+  // represents current reality.
+  const rows = await db.execute<{
+    id: string;
+    service_id: string;
+    route_host: string;
+  }>(sql`
+    SELECT DISTINCT ON (service_id) id, service_id, route_host
+    FROM service_revisions
+    WHERE existence_status = 'created' AND route_host IS NOT NULL
+    ORDER BY service_id, created_at DESC
+  `);
 
   if (rows.length === 0) return;
-  console.log(`prober: probing ${rows.length} revisions`);
-  await Promise.all(rows.map(probeOne));
+  console.log(`prober: probing ${rows.length} revisions (latest per service)`);
+  await Promise.all(
+    rows.map((r) =>
+      probeOne({ id: r.id, serviceId: r.service_id, routeHost: r.route_host }),
+    ),
+  );
 }
 
 /**
