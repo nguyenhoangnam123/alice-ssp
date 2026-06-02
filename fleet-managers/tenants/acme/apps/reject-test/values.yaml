@@ -1,0 +1,46 @@
+tenant:
+  id: 84b02a25117e4b7fbaa1983b64
+  domain: acme
+  department: growth
+
+ssp:
+  serviceId: 01KT3CA1FBVEJE2V3JZ7P271M5
+  changeRequestId: 01KT3CA1FBPW5127JMH82PQX8J
+
+replicaCount: 3
+
+image:
+  repository: SSP_ECR_REGISTRY/ssp/acme/reject-test
+  tag: latest
+  pullPolicy: IfNotPresent
+
+containerPort: 3000
+
+route:
+  enabled: true
+  hostname: reject-test.acme.ssp.mightybee.dev
+  tls:
+    termination: edge
+
+resources:
+  requests:
+    cpu: "4"
+    memory: "8Gi"
+  limits:
+    cpu: "4"
+    memory: "8Gi"
+
+securityContext:
+  runAsUser: 10001
+  runAsGroup: 10001
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+
+podSecurityContext:
+  fsGroup: 10001
+
+serviceAccount:
+  create: true
+
+vpnOnly: false
