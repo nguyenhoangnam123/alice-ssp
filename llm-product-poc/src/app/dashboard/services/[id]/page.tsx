@@ -7,6 +7,10 @@ import { eq, desc } from "drizzle-orm";
 import { requireTenantAdmin, requireUser } from "@/lib/auth/rbac";
 import { processChangeRequest } from "@/lib/workflow/orchestrator";
 import { StatusBadge } from "@/components/status-badge";
+import { CrModal } from "@/components/cr-modal";
+import { RevisionsTimeline } from "@/components/revisions-timeline";
+
+export const dynamic = "force-dynamic";
 
 async function newChangeRequest(formData: FormData) {
   "use server";
@@ -14,6 +18,16 @@ async function newChangeRequest(formData: FormData) {
   const serviceId = String(formData.get("service_id") ?? "");
   const summary = String(formData.get("summary") ?? "").trim();
   if (!summary) throw new Error("summary required");
+
+  const payloadRaw = String(formData.get("payload_raw") ?? "").trim();
+  let payload: Record<string, unknown> = {};
+  if (payloadRaw) {
+    try {
+      payload = JSON.parse(payloadRaw);
+    } catch {
+      throw new Error("payload must be valid JSON");
+    }
+  }
 
   const [svc] = await db.select().from(services).where(eq(services.id, serviceId)).limit(1);
   if (!svc) throw new Error("service not found");
@@ -25,6 +39,7 @@ async function newChangeRequest(formData: FormData) {
     serviceId,
     requestedBy: user.id,
     summary,
+    payload,
     status: "submitted",
   });
 
@@ -49,30 +64,41 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
     .from(serviceRevisions)
     .where(eq(serviceRevisions.serviceId, svc.id))
     .orderBy(desc(serviceRevisions.createdAt))
-    .limit(20);
+    .limit(50);
+
+  // Serialize for the client component (Date → ISO string).
+  const revisionsForClient = revs.map((r) => ({
+    id: r.id,
+    serviceStatus: r.serviceStatus,
+    crStatus: r.crStatus,
+    aiSummary: r.aiSummary,
+    cdManifestRef: r.cdManifestRef,
+    dockerfileSnapshot: r.dockerfileSnapshot,
+    ciPipelineRef: r.ciPipelineRef,
+    createdAt: r.createdAt.toISOString(),
+  }));
 
   return (
     <section className="space-y-6">
-      <header>
-        <p className="text-muted text-sm">
-          <Link href={`/dashboard/tenants/${tenant?.id ?? ""}`}>{tenant?.domain}</Link> /
-        </p>
-        <h1 className="text-xl">
-          {svc.name} <StatusBadge value={svc.currentStatus} />
-        </h1>
-        <p className="text-muted text-sm">
-          repo: <a href={svc.gitRepo}>{svc.gitRepo}</a>
-        </p>
-        <p className="text-sm mt-2">{svc.description}</p>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-muted text-sm">
+            <Link href={`/dashboard/tenants/${tenant?.id ?? ""}`}>{tenant?.domain}</Link> /
+          </p>
+          <h1 className="text-xl mt-1">
+            {svc.name} <StatusBadge value={svc.currentStatus} />
+          </h1>
+          <p className="text-muted text-sm mt-1">
+            repo: <a href={svc.gitRepo}>{svc.gitRepo}</a>
+          </p>
+          <p className="text-sm mt-2">{svc.description}</p>
+        </div>
+        <CrModal action={newChangeRequest} serviceId={svc.id} serviceName={svc.name} />
       </header>
 
       <div>
-        <h2 className="text-lg mb-2">Submit a change request</h2>
-        <form action={newChangeRequest} className="flex gap-2">
-          <input type="hidden" name="service_id" value={svc.id} />
-          <input name="summary" placeholder="e.g. bump replicas to 4" required />
-          <button type="submit">Submit CR</button>
-        </form>
+        <h2 className="text-lg mb-2">Revisions</h2>
+        <RevisionsTimeline revisions={revisionsForClient} />
       </div>
 
       <div>
@@ -102,31 +128,6 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
               ))}
             </tbody>
           </table>
-        )}
-      </div>
-
-      <div>
-        <h2 className="text-lg mb-2">Revision history</h2>
-        {revs.length === 0 ? (
-          <p className="text-muted">None.</p>
-        ) : (
-          <ol className="border-l border-border pl-4 space-y-3">
-            {revs.map((r) => (
-              <li key={r.id} className="text-sm">
-                <div className="flex items-center gap-2">
-                  <StatusBadge value={r.serviceStatus} />
-                  <StatusBadge value={r.crStatus} />
-                  <span className="text-muted text-xs">{r.createdAt.toISOString()}</span>
-                </div>
-                {r.aiSummary && <p className="text-muted mt-1">{r.aiSummary}</p>}
-                {r.cdManifestRef && (
-                  <p className="text-xs mt-1">
-                    PR: <a href={r.cdManifestRef}>{r.cdManifestRef}</a>
-                  </p>
-                )}
-              </li>
-            ))}
-          </ol>
         )}
       </div>
     </section>
