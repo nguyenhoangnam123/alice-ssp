@@ -1,4 +1,4 @@
-name: Build and Push api-service
+name: Build and Push
 on:
   push:
     branches: [main]
@@ -7,30 +7,27 @@ permissions:
   id-token: write
   contents: read
 
-env:
-  ECR_REGISTRY: 195748744911.dkr.ecr.eu-west-1.amazonaws.com
-  ECR_REPOSITORY: ssp-portal
-  AWS_REGION: eu-west-1
-
 jobs:
-  build-and-push:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::195748744911:role/github-actions-ecr-push
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: eu-west-1
 
       - name: Login to Amazon ECR
-        id: login-ecr
+        id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push Docker image
+      - name: Build and push image
+        env:
+          REGISTRY: 195748744911.dkr.ecr.eu-west-1.amazonaws.com
+          REPOSITORY: api-service
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          IMAGE_TAG="${{ github.sha }}"
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG

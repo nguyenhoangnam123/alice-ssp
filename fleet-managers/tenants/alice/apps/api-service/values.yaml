@@ -5,14 +5,13 @@ tenant:
 
 ssp:
   serviceId: 01KT4VQ06937KK4JNTCTJA20C8
-  changeRequestId: 01KT4VQ06AV2VA98T79EJ8REZX
+  changeRequestId: 01KT4Y9W9Z9PTF3YXQAK4003FK
 
 replicaCount: 2
 
 image:
   repository: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal
-  tag: "8de218fd12a8eb54fc3d344e9a42dc9e741dc3f2"
-  pullPolicy: IfNotPresent
+  tag: 8de218fd12a8eb54fc3d344e9a42dc9e741dc3f2
 
 resources:
   requests:
@@ -22,17 +21,13 @@ resources:
     cpu: 200m
     memory: 256Mi
 
+env:
+  - name: PORT
+    value: "8080"
+
 route:
   enabled: true
-  host: api.alice.ssp.mightybee.dev
+  host: api.ssp.mightybee.dev
   vpnInternal: false
   tls:
     enabled: true
-    termination: edge
-
-containerPort: 3000
-
-securityContext:
-  runAsUser: 10001
-  runAsNonRoot: true
-  readOnlyRootFilesystem: true
