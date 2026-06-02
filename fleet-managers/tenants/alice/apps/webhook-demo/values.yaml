@@ -1,0 +1,39 @@
+tenant:
+  id: cbdbfcd6373448318d82ddc58d
+  domain: alice
+  department: platform
+
+ssp:
+  serviceId: 01KT4MT752Y23AYQVQV4TYNXN9
+  changeRequestId: 01KT4MT753R4Z85KH281KZ8W1X
+
+replicaCount: 1
+
+image:
+  repository: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal
+  tag: "21b699524e40531298cf34bc871e7e81a59a4d9d"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+route:
+  enabled: true
+  host: webhook-demo.ssp.mightybee.dev
+  vpnInternal: false
+  tls:
+    enabled: true
+    termination: edge
+
+securityContext:
+  runAsUser: 10000
+  runAsGroup: 10000
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+
+containerPort: 3000
