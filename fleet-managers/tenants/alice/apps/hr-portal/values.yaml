@@ -9,6 +9,16 @@ ssp:
 
 replicaCount: 1
 
+# Reusing the platform portal image as the hr-portal runtime — Next.js standalone server
+# reads PORT from env; the chart's service.port (8080 default) wires the rest.
+env:
+  - name: PORT
+    value: "8080"
+  - name: HOSTNAME
+    value: "0.0.0.0"
+  - name: NODE_ENV
+    value: "production"
+
 image:
   repository: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal
   tag: "6a860a77fd16afadf98494f74948c1110cf9e4a9"
