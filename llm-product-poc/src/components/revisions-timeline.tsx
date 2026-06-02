@@ -124,10 +124,17 @@ function parseSummary(raw: string | null): {
   if (!raw) return { current: "", desired: "", summary: "", rejected: false };
 
   const rejected = /\*\*Rejected by AI\*\*/i.test(raw);
+  // Accept any of: **Label**: / **Label:** / Label: / # Label / ## Label
   const grab = (label: string): string => {
+    const variants = [
+      `\\*\\*${label}\\*\\*\\s*:?`,
+      `\\*\\*${label}:\\*\\*`,
+      `#+\\s*${label}\\s*:?`,
+      `^${label}\\s*:`,
+    ].join("|");
     const re = new RegExp(
-      `\\*\\*${label}\\*\\*\\s*:?\\s*([\\s\\S]*?)(?=\\n\\s*\\*\\*[A-Z]|$)`,
-      "i",
+      `(?:${variants})\\s*([\\s\\S]*?)(?=\\n\\s*(?:\\*\\*[A-Z]|#+\\s|[A-Z][a-z]+\\s*:)|$)`,
+      "im",
     );
     return raw.match(re)?.[1]?.trim() ?? "";
   };
