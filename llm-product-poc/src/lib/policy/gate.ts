@@ -38,8 +38,21 @@ export async function runPolicyGate(args: {
     violations.push("git_repo is not a valid URL");
   }
 
-  // 3. Subdomain (if present) is unique within tenant.
+  // 3. Subdomain (if present) must be exactly one DNS label off the SSP zone — either
+  // a bare label ("api") which is concatenated to ".ssp.mightybee.dev" by the
+  // orchestrator, or a full FQDN that itself is one level deep ("api.ssp.mightybee.dev").
+  // Two-level subdomains are forbidden because the wildcard ACM cert is *.ssp.mightybee.dev
+  // and does NOT cover *.<anything>.ssp.mightybee.dev.
   if (args.service.subdomain) {
+    const LABEL = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+    const ONE_LEVEL_FQDN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?\.ssp\.mightybee\.dev$/;
+    if (!LABEL.test(args.service.subdomain) && !ONE_LEVEL_FQDN.test(args.service.subdomain)) {
+      violations.push(
+        `subdomain "${args.service.subdomain}" must be a single DNS label ("api") or a one-level FQDN under ssp.mightybee.dev ("api.ssp.mightybee.dev") — deeper subdomains aren't covered by the wildcard TLS cert`,
+      );
+    }
+
+    // Unique within tenant.
     const rows = await db
       .select({ id: services.id })
       .from(services)

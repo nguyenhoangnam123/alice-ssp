@@ -217,7 +217,7 @@ jobs:
 service: { port: 8080 }
 route:
   enabled: ${Boolean(service.subdomain)}
-  host: "${service.subdomain ?? service.name}.${tenant.domain}.ssp.mightybee.dev"
+  host: "${(service.subdomain ?? service.name).includes(".") ? (service.subdomain ?? service.name) : `${service.subdomain ?? service.name}.ssp.mightybee.dev`}"
   vpnInternal: ${service.vpnInternal}
   tls: ${!service.vpnInternal}
 tenant: { id: "${tenant.id}", domain: "${tenant.domain}", department: "${tenant.department}" }

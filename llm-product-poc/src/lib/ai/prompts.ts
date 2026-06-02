@@ -70,10 +70,11 @@ If you approve, emit in this exact order:
     / tenant.department / ssp.serviceId / ssp.changeRequestId AND a route block:
     route.enabled, route.host, route.vpnInternal, route.tls.
 
-    Hostname rule:
-      - if the service's subdomain field contains a dot, treat it as the full FQDN
-        and use it verbatim as route.host (the tenant owns that parent zone)
-      - otherwise concatenate as <subdomain>.<tenant.domain>.ssp.mightybee.dev>
+    Hostname rule (single-level convention — wildcard cert is *.ssp.mightybee.dev):
+      - if the service's subdomain field contains a dot, it is already a one-level FQDN
+        under ssp.mightybee.dev (e.g. "hr.ssp.mightybee.dev"); use it verbatim.
+      - otherwise concatenate as <subdomain>.ssp.mightybee.dev (NEVER insert the tenant
+        as an intermediate label — two-level subdomains aren't covered by the cert)>
    \`\`\`
 
    \`\`\`argocd

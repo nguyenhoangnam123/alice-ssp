@@ -203,14 +203,14 @@ async function transition(crId: string, newStatus: CrStatus, detail?: string) {
 
 function deriveHost(
   svc: { name: string; subdomain: string | null },
-  tenant: { domain: string },
+  _tenant: { domain: string },
 ): string | null {
   if (!svc.subdomain) return null;
-  // FQDN convention from prompts.ts: if subdomain contains a dot, use it verbatim;
-  // otherwise concat to the SSP zone.
+  // Single-level convention enforced by policy gate: bare label → <sub>.ssp.mightybee.dev,
+  // or already a one-level FQDN → use verbatim. Tenant is metadata; the URL never carries it.
   return svc.subdomain.includes(".")
     ? svc.subdomain
-    : `${svc.subdomain}.${tenant.domain}.ssp.mightybee.dev`;
+    : `${svc.subdomain}.ssp.mightybee.dev`;
 }
 
 async function setServiceStatus(svcId: string, status: SvcStatus) {
