@@ -87,72 +87,102 @@ input tokens for it.
 
 ## LLM token cost — first-class signal
 
-### What we have today
+### What we have today (live in this account)
 
-- AWS Budget per `cost_center` catches Bedrock spend at the AWS-bill level,
-  ~24 h delay.
-- One stdout line per Bedrock call: `bedrock ok model=... ms=15078 tok_in=1136
-  tok_out=1227 cache_read=0`. Grep-able, not query-able by tenant.
+- **`llm_calls` table** — every Bedrock invocation persisted with model id,
+  input/output/cache tokens, computed USD cost, latency, optional
+  change_request_id, tenant_id. Indexed on `(tenant_id, created_at)`.
+- **`meteredBedrockInvoke()`** (`src/lib/observability/metered-invoke.ts`)
+  — the only path the portal/orchestrator uses to call Bedrock. Wraps
+  the call in: span open → invoke → parse usage → compute cost → INSERT
+  → emit EMF event → span close. Atomic per call.
+- **`checkBudget(tenantId)`** — same library, called BEFORE every Bedrock
+  invoke. Reads `SUM(cost_usd) FROM llm_calls WHERE tenant_id=? AND
+  created_at >= month_start` and compares to
+  `tenants.bedrock_monthly_cap_usd` (default $5/mo, per-tenant
+  overridable).
+- **AWS Budget per `cost_center`** still in place as the second line of
+  defence at the AWS-bill level (~24 h delay).
+- **Live exercise**: the chat at `chat.ssp.mightybee.dev` is the
+  end-to-end demo — sign in (Cognito), send messages (`meteredBedrockInvoke`
+  on every send), watch the service-detail **usage widget** tick up.
+  Hit the cap and `POST /api/chat/message` returns HTTP 402 with the
+  spent/cap payload that the UI surfaces; Bedrock is never invoked.
 
-### Gap
+### Gap (closes in Ring 2)
 
-- No per-CR token accounting.
-- No per-tenant aggregation.
-- No real-time alarm. A vibe coder's bug loop could fire 200 CRs in 5 minutes
-  and blow through a daily budget before the alarm fires.
+- Tenant-side calls via MCP record into `llm_calls` via the
+  `/api/internal/llm-calls` HTTP endpoint, but **enforcement is
+  trust-based** — a tenant app that bypasses MCP can call Bedrock with
+  its own IRSA role without being metered. Ring 3 adds an in-cluster
+  Bedrock egress proxy + NetworkPolicy to make this network-enforced.
+- The budget check is best-effort: a concurrent burst of CRs from the
+  same tenant can each pass the check and then push over cap. Ring 3
+  rate-limits per call.
 
-### Design
+### How it works (live)
 
 ```mermaid
 sequenceDiagram
-  participant Orch as Orchestrator
-  participant MCP as Observability MCP
+  participant Caller as Orchestrator / chat
+  participant Guard as checkBudget()
   participant Bed as Bedrock
-  participant CW as CloudWatch Metrics
-  participant Guard as Per-tenant budget guard
-  Orch->>Guard: check(tenant, projected_tokens)
-  alt over budget
-    Guard-->>Orch: reject
-    Orch->>DB: cr=ai_validation_rejected (budget)
-  else under budget
-    Orch->>Bed: invokeModel
-    Bed-->>Orch: response + usage
-    Orch->>MCP: record_llm_call(tenant, cr_id, model, usage, cost_usd)
-    MCP->>CW: PutMetricData SSP/Bedrock/CostUSD dim={tenant,model}
-    MCP->>DB: INSERT INTO llm_calls
+  participant DB as llm_calls
+  participant CW as CloudWatch EMF
+  Caller->>Guard: tenantId
+  alt over cap
+    Guard-->>Caller: {ok:false, spent, cap}
+    Caller->>Caller: emit guarded_action(blocked)<br/>+ transition CR rejected<br/>+ HTTP 402 (chat)
+  else under cap
+    Caller->>Bed: meteredBedrockInvoke()
+    Bed-->>Caller: response + usage
+    Caller->>DB: INSERT (FK=cr_id or NULL for chat)
+    Caller->>CW: emit EMF {Namespace:SSP/Bedrock, dim:tenant_id+model}
+    Caller-->>Caller: span closed
   end
 ```
 
 ### Pieces
 
-1. **`llm_calls` table** — append-only audit. Columns: `id`, `cr_id`,
-   `tenant_id`, `model_id`, `input_tokens`, `output_tokens`,
+1. **`llm_calls` table** — append-only audit. Columns: `id`,
+   `change_request_id` (nullable; chat passes null since trace IDs are
+   synthetic), `tenant_id`, `model_id`, `input_tokens`, `output_tokens`,
    `cache_read_tokens`, `cache_write_tokens`, `cost_usd`, `latency_ms`,
    `created_at`.
 2. **CloudWatch EMF metric publish** — every insert also emits
    `SSP/Bedrock/TokensInput`, `SSP/Bedrock/CostUSD` with dimensions
    `{tenant_id, model}`. Alarm on cost-rate (cents/min), not just total monthly.
-3. **Budget guard** — before each Bedrock invoke, the orchestrator queries
-   `SUM(cost_usd) WHERE tenant_id AND created_at > date_trunc('month', now())`
-   and refuses if projected cost exceeds `tenants.bedrock_monthly_cap_usd`.
-4. **Live dashboard line** — `/dashboard/tenants/<id>` shows current-month
-   spend from `llm_calls` (sub-second freshness).
+3. **Budget guard** — `checkBudget()` is called from two places: the
+   orchestrator (between `policy_gate_passed` and AI invoke) and the chat
+   `/api/chat/message` route. Same function, single source of truth.
+4. **Service-detail usage widget** —
+   `src/components/usage-widget.tsx` renders on every service detail
+   page. Shows spent / cap / remaining, a color-coded progress bar (green
+   → blue → yellow → red as the percentage crosses 50/80/100), and the
+   most-recent 8 MCP `record_llm_call` rows with model, tokens,
+   cache-hit, cost, latency, CR linkage when present.
 
-### Reference implementation
+### Reference + tenant implementation
 
-[`mcp-server/`](../mcp-server/) is a runnable MCP server with three tools:
+[`mcp-server/`](../mcp-server/) is a runnable MCP server with four tools.
+The portal uses the same schema in-process (library mode) via
+`src/lib/observability/`; tenant pods spawn the MCP server as a sidecar
+(stdio mode).
 
 | Tool | Purpose |
 | --- | --- |
-| `record_llm_call` | One Bedrock invocation: model, tokens, computed USD, latency. Emits EMF on stderr; downstream is CW Embedded Metric Format. |
+| `check_budget` | Pre-flight cost guardrail. Calls portal `GET /api/internal/budget/<tenantId>`; returns `{ok, spent_usd, cap_usd, remaining_usd}`. Tenant apps MUST honour `ok=false` by refusing to invoke Bedrock. |
+| `record_llm_call` | One Bedrock invocation: model, tokens, computed USD, latency. Emits EMF on stderr + POSTs to portal `/api/internal/llm-calls` so the next `check_budget` reflects it. |
 | `start_span` / `end_span` | Trace span open/close — see next section. |
-| `log_guarded_action` | Audit log for sensitive ops (PII block, allowlist refusal, prompt-injection detect). |
+| `log_guarded_action` | Audit log for sensitive ops (PII block, allowlist refusal, self-refusal-over-budget). |
 
-Pricing table in `mcp-server/src/pricing.ts` is static (Opus / Sonnet / Haiku
-4.x rates from the public Bedrock page); we'd pull from the AWS pricing API
-only if rates started moving more than once a quarter.
+Pricing table in `mcp-server/src/pricing.ts` is shared with
+`llm-product-poc/src/lib/observability/pricing.ts` by convention
+(same model IDs, same per-1M-token rates).
 
-`npm run toy` runs end-to-end and prints four real EMF events on stderr.
+`npm run toy` exercises the orchestrator path end-to-end.  
+`npm run tenant` exercises the tenant path (spawn MCP → `check_budget` →
+simulate Bedrock → `record_llm_call`).
 
 ## Tracing across the agent / tool-call chain
 
@@ -244,10 +274,13 @@ have been rejected* is investigated as a prompt regression.
 | --- | --- |
 | AWS Budgets per cost-center + alerts | **Ring 1 (live)** |
 | Six-key tag schema + immutable domain | **Ring 1 (live)** |
-| MCP server reference impl | **Ring 1 (live)** in `mcp-server/` |
-| Wire MCP into orchestrator (`meteredInvoke`) | Ring 2 |
-| `llm_calls` table + per-tenant budget guard | Ring 2 |
+| MCP server with `check_budget` / `record_llm_call` / spans / `log_guarded_action` | **Ring 1 (live)** |
+| `meteredBedrockInvoke()` wired into orchestrator + chat | **Ring 1 (live)** |
+| `llm_calls` table + per-tenant `bedrock_monthly_cap_usd` + `checkBudget()` guard | **Ring 1 (live)** |
+| Internal HTTP API for tenant-side MCP (`/api/internal/budget`, `/api/internal/llm-calls`) with shared bearer auth | **Ring 1 (live)** |
+| Service-detail usage widget (cost, cap, recent calls) | **Ring 1 (live)** |
 | Tracing propagation across GHA + ArgoCD | Ring 2 |
 | OpenCost in-cluster + Grafana | Ring 2 |
 | Prometheus + AlertManager rules per SLO | Ring 2 |
+| Egress-proxy + NetworkPolicy that denies direct Bedrock from tenant ns (enforced vs trust-based) | Ring 3 |
 | Per-tenant Bedrock rate limit (blocks before invoke) | Ring 3 |

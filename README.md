@@ -15,27 +15,35 @@ ArgoCD reconciles into EKS.
 
 ## How to run / explore
 
-The platform is **already running** in the user's AWS account (`195748744911`,
-eu-west-1). For a reviewer who wants to look at it, the high-signal artifacts
-are:
+The platform is **already running** in the user's AWS account
+(`195748744911`, eu-west-1). For a reviewer who wants to look at it, the
+high-signal artifacts:
 
 ```sh
-# 1. Open the portal in a browser
-open https://portal.ssp.mightybee.dev
+# 1. Chat (the demo workload — Cognito-gated, metered Bedrock per message)
+open https://chat.ssp.mightybee.dev/chat/login
+#    user: namnh21894@gmail.com
+#    pass: ChatDemo!2026
 
-# 2. See the most recent AI-generated PR
+# 2. Admin portal — see the chat service detail page with the usage widget
+open https://portal.ssp.mightybee.dev/dashboard/services/01KTC00CHATSV00000000000001
+
+# 3. The most recent AI-generated PR
 open https://github.com/nguyenhoangnam123/alice-ssp/pull/17
 
-# 3. Run the observability MCP server's toy app locally (no AWS needed)
+# 4. Run the observability MCP server locally (no AWS needed)
 cd mcp-server
 npm install
-npm run toy
-# → JSON events on stderr: span, llm_call (with cost), guarded_action
+npm run toy      # orchestrator-side: spans + llm_call + guarded_action
+npm run tenant   # tenant-side: check_budget → simulate Bedrock → record_llm_call
+                 # (requires SSP_PORTAL_API + SSP_INTERNAL_TOKEN env)
 ```
 
-To onboard a service end-to-end, see
-[docs/05-onboarding-walkthrough.md](./docs/05-onboarding-walkthrough.md) —
-click-by-click using the live portal.
+Every chat message exercises the **full guardrail stack**: Cognito sign-in →
+`checkBudget(tenantId)` → `meteredBedrockInvoke()` → Bedrock → `INSERT
+llm_calls` → CW EMF emit → span close. Drop `tenants.bedrock_monthly_cap_usd`
+to `0.01` and the next send returns HTTP 402 with the platform's refusal
+reason; Bedrock is never called.
 
 ## Read first — Deliverable 1 (Design Doc)
 
@@ -73,30 +81,30 @@ Option C (guardrails middleware) lives partially in
 
 ## What I'd do next given another full day
 
-In priority order:
+In priority order (LLM observability, budget guard, MCP wiring, chat —
+all shipped in Ring 1):
 
-1. **Wire the MCP into the portal.** The MCP server + design exist; the
-   orchestrator still writes to stdout. ~2h to make `meteredInvoke` call
-   `record_llm_call`, and to thread `cr_id` as the trace ID through every
-   subsequent emit. Closes the spec's LLM observability gap in code, not
-   just design.
-
-2. **Add the output-YAML re-validation layer** to the guardrail stack —
+1. **Add the output-YAML re-validation layer** to the guardrail stack —
    parse the AI's generated `values.yaml` and assert no
    `securityContext.privileged=true`, no `hostNetwork`, no `hostPath`. Two
-   hours; closes prompt-injection defence layer 4 (see
-   [10-prompt-injection-and-pii.md](./docs/10-prompt-injection-and-pii.md)).
+   hours; closes prompt-injection defence layer 4.
 
-3. **Replace the in-process orchestrator with Step Functions.** Unblocks
+2. **Replace the in-process orchestrator with Step Functions.** Unblocks
    portal HA, gives durable retries on Bedrock throttle. Half-day.
 
-4. **Service retirement CR.** A "decommission" CR that scales the Deployment
-   to 0, drops the HTTPRoute, sets `services.deletedAt`, revokes IRSA. Closes
-   the lifecycle gap. Half-day.
+3. **Service retirement CR.** A "decommission" CR that scales the
+   Deployment to 0, drops the HTTPRoute, sets `services.deletedAt`,
+   revokes IRSA. Closes the lifecycle gap. Half-day.
 
-5. **Per-tenant Bedrock budget enforcement.** Currently a CR loop could burn
-   $$ before the budget alarm fires. Once the MCP wiring lands, add a
-   "current spend > cap" guard in the orchestrator. Two hours.
+4. **Per-tenant JWT for the MCP API.** Today the `/api/internal/*`
+   endpoints share a single bearer token across the cluster. Swap for
+   per-tenant short-lived JWTs so a leaked token can't be used against
+   another tenant's data.
+
+5. **Tracing propagation through GHA + ArgoCD.** Trace IDs currently
+   join only portal spans. Thread `SSP_CR_ID` env var through GHA
+   workflow steps; add `metadata.annotations["ssp.platform/cr-id"]` to
+   ArgoCD Applications so cluster events inherit it.
 
 ## AI tools — how I used them, where I overrode
 
@@ -132,32 +140,61 @@ This is the part the spec calls out as not throwaway. Honest take.
   round, watched it fail TLS handshake on every tenant route, and rewrote
   the prompt to enforce one-level. **The model didn't suggest checking
   wildcard depth — that's the kind of constraint the AI doesn't know unless
-  you tell it.** Documented in [06-tradeoffs.md](./docs/06-tradeoffs.md) #4.
+  you tell it.** Documented in
+  [deliverable1-05-tradeoffs.md](./docs/deliverable1-05-tradeoffs.md) #4.
 - **Probing all revisions vs. latest only.** AI's first cut probed every
   revision with `existence='created'`. That made superseded revisions
   perpetually unhealthy and clobbered `service.currentStatus` via the
   mirror. I added `SELECT DISTINCT ON (service_id) ... ORDER BY created_at
-  DESC` myself; the model didn't volunteer the multi-revision issue.
+  DESC` myself.
 - **Application name determinism.** First AI-generated `argocd Application`
   manifest had `metadata.name: api-service`; the hot-fix CR generated it as
   `alice-api-service`. App-of-apps treated these as two different
   Applications, orphaned the original Deployment and HTTPRoute, and both
-  fought over the same hostname. I caught this in production logs,
-  diagnosed it, and added the `metadata.name` lock + `resources-finalizer`
-  to the system prompt. **The fix is in the prompt — the AI now obeys it
-  every time. But finding it required me running real CRs and watching the
-  cluster state, not asking the AI to review its own work.**
+  fought over the same hostname. I caught this in production logs and
+  added the `metadata.name` lock + `resources-finalizer` to the system
+  prompt.
 - **Prober gating.** AI built `startProber()` to fire at module load. That
   worked when only the portal ran the image — but every tenant pod that
   reuses the portal image also got a prober, all spamming ECONNREFUSED
   against a `DATABASE_URL` they didn't have. I made it opt-in via
-  `SSP_PORTAL_PROBER=true`. **AI wanted to gate it on `DATABASE_URL`
-  presence; I rejected that because hr-portal has DATABASE_URL too. The
-  right gate is a portal-specific signal.**
-- **The deliverable framing in this doc.** AI's first draft of the README's
-  AI-tools section was too positive — "AI helped with X, Y, Z." I rewrote
-  it to lead with overrides. The spec is explicitly scoring how I
-  *override*, not just how I use.
+  `SSP_PORTAL_PROBER=true`.
+- **The chat's FK silent drop.** `meteredBedrockInvoke` originally
+  required `crId: string` and inserted it into `llm_calls`. The chat
+  passes a synthetic trace ID (`svc:<id>`) which FK-violated against
+  `change_requests`. The catch block swallowed it as "non-fatal". I
+  noticed because the usage widget kept showing `$0` after sending a
+  chat message that clearly hit Bedrock — went looking at logs, found
+  `insert or update violates foreign key constraint`. Made `crId`
+  optional + nullable in the FK; bumped the log level from `.error` to
+  `.warn`. **The AI built the FK without thinking about who else
+  besides the orchestrator might call `meteredBedrockInvoke`. Reusing
+  a function across boundaries surfaces the assumptions baked into its
+  signature.**
+- **The Haiku model ID guess.** I asked the AI to write the chat
+  against Claude Haiku 4.5 to keep cost low. It wrote
+  `eu.anthropic.claude-haiku-4-5-v1`. Bedrock rejected with "The
+  provided model identifier is invalid." I switched to Opus 4.6 (the
+  ID we'd already validated). **Model IDs are an external API the AI
+  can't introspect; the cheap check is `aws bedrock list-foundation-models`,
+  not asking the LLM.**
+- **The chat system prompt lying.** AI wrote a system prompt that
+  hardcoded "I'm Claude Haiku 4.5 through Bedrock." After switching to
+  Opus 4.6 the model still said it was Haiku. I rewrote the prompt
+  model-agnostic. **Models can't be the source of truth on their own
+  identity — the cost dashboard is.**
+- **The Cognito client secret discovery.** Sign-in failed with
+  `NotAuthorizedException: Client ... is configured with secret but
+  SECRET_HASH was not received`. The AI's first cut of the InitiateAuth
+  call didn't include SECRET_HASH because it assumed a public client.
+  Added the `crypto.createHmac('sha256', secret).update(username +
+  client_id).digest('base64')` computation server-side. **AWS SDK error
+  messages are usually precise about what's missing — read them first,
+  ask the AI second.**
+- **The deliverable framing in this doc.** AI's first draft of the
+  README's AI-tools section was too positive — "AI helped with X, Y, Z."
+  I rewrote it to lead with overrides. The spec is explicitly scoring
+  how I *override*, not just how I use.
 
 **One pattern that worked well**: I kept asking the AI to surface
 **deliberate deviations** at every commit — "we're doing X, the alternative

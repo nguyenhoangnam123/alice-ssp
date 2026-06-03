@@ -1,7 +1,7 @@
 # Deliverable 1 — 03 · Guardrails
 
-Six independent defences. A bad ChangeRequest has to defeat every one to cause
-damage. Plus two AI-specific layers — prompt-injection defense and PII
+Seven independent defences. A bad ChangeRequest has to defeat every one to
+cause damage. Plus two AI-specific layers — prompt-injection defence and PII
 handling — that the spec calls out by name.
 
 ```mermaid
@@ -10,14 +10,22 @@ flowchart LR
   L1 -->|fail| End1[400, no DB row]
   L1 -->|pass| L2{2. Deterministic policy gate}
   L2 -->|fail| End2[cr=policy_gate_rejected,<br/>rev.existence='rejected']
-  L2 -->|pass| L3{3. AI validation<br/>Bedrock + Guardrails}
+  L2 -->|pass| L2b{2b. Per-tenant budget guard<br/>checkBudget&#40;tenant&#41;}
+  L2b -->|over cap| End2b[guarded_action 'bedrock.budget_exceeded',<br/>cr=ai_validation_rejected,<br/>Bedrock NEVER invoked]
+  L2b -->|under cap| L3{3. AI validation<br/>Bedrock + Guardrails}
   L3 -->|fail| End3[cr=ai_validation_rejected]
   L3 -->|pass| L4{4. Human PR review}
   L4 -->|reject| End4[CR closed, no merge]
   L4 -->|merge| L5{5. Platform enforcement<br/>NetPol / Quota / IRSA / WAF}
   L5 -->|violate| End5[admission deny / WAF block / IAM deny]
-  L5 -->|allow| L6[6. Audit: append-only<br/>status_history + revisions]
+  L5 -->|allow| L6[6. Audit: append-only<br/>status_history + revisions + llm_calls]
 ```
+
+Layer **2b** is new in this build — see
+[deliverable1-02-observability-and-cost.md](./deliverable1-02-observability-and-cost.md)
+for the cost-guardrail implementation. It runs **before** AI invocation so a
+runaway tenant can never burn Bedrock tokens past its monthly cap; the chat
+service at `chat.ssp.mightybee.dev` exercises the same guard on every message.
 
 ## Layer 1 — Zod at the API edge
 

@@ -191,10 +191,21 @@ flowchart LR
 ### Ring 1 — what ships first (live today)
 
 - One tenant (`alice`) with namespace + NetworkPolicy + ResourceQuota + IRSA.
-- CR workflow end-to-end: submit → policy gate → AI → PR → merge → reconcile.
+- CR workflow end-to-end: submit → policy gate → **budget guard** → AI → PR →
+  merge → reconcile.
 - Wildcard `*.ssp.mightybee.dev` cert via ACM; ExternalDNS publishes A
   records.
 - AWS Budgets per cost-center with email alerts.
+- Per-tenant Bedrock cost guardrail: `tenants.bedrock_monthly_cap_usd` +
+  `checkBudget()`. Refuses **before** any tokens are spent.
+- MCP observability slice: spans, `record_llm_call`, `check_budget`,
+  `log_guarded_action` — used in library mode by the portal and stdio
+  mode by tenant apps.
+- **Chat service** at `chat.ssp.mightybee.dev` — Cognito-gated, every
+  message routes through `meteredBedrockInvoke`; live demo of the
+  cost guardrail.
+- Service-detail usage widget — per-tenant Bedrock spend, cap, recent
+  MCP-recorded calls.
 - Audit trail (`status_history` JSONB) on every CR.
 
 ### What stays manual at launch
@@ -210,7 +221,8 @@ flowchart LR
 
 ### What unlocks the next 10x
 
-Ranked by signal:
+Ranked by signal (LLM observability + budget guard already shipped in Ring
+1):
 
 1. **Self-service tenant onboarding** — a "new tenant" CR opens a PR that
    creates the tenant's Terraform module. Platform team reviews same as a
@@ -220,23 +232,33 @@ Ranked by signal:
 3. **Auto-merge for low-risk CRs** — replica change 1-4 + no image change +
    AI confidence above threshold → auto-merge after a 5-min cool-off. Drops
    human-gate latency from O(hours) to O(minutes).
-4. **LLM observability MVP** — [deliverable1-02](./deliverable1-02-observability-and-cost.md)
-   in code, not just design.
-5. **PII scanning on CR descriptions** — [deliverable1-03](./deliverable1-03-guardrails.md).
+4. **PII scanning on CR descriptions** — [deliverable1-03](./deliverable1-03-guardrails.md).
+5. **Tracing propagation through GHA + ArgoCD** — CR ID currently joins
+   only the portal spans; extend to GHA `SSP_CR_ID` env var + ArgoCD
+   `metadata.annotations["ssp.platform/cr-id"]`.
 6. **Cost view in the portal** — `/dashboard/costs` page queries Cost
-   Explorer via IRSA, shows 30-day spend per tenant.
+   Explorer via IRSA, shows 30-day spend per tenant alongside the
+   per-service widget that already exists.
+7. **Per-tenant JWT for MCP API** — replaces today's shared-secret bearer
+   on `/api/internal/*` with short-lived per-tenant tokens.
 
 ### What's required to stay usable from 5 → 50 apps (Ring 3)
 
 1. HA portal + HA prober (single-replica today is fine for one tenant; not
    for fifty).
 2. Image scanning + signature verification (Cosign at admission).
-3. Per-tenant Bedrock budget enforcement (today a CR loop could burn $$
-   before the alarm fires).
-4. Service retirement CR.
-5. Secret rotation Lambdas (above).
-6. Multi-region — same chart, fleet repo grows a `regions/` axis.
-7. Drift surfaces — wire ArgoCD `app diff` results into a per-tenant feed.
+3. **Network-enforced cost guardrail** — today the tenant-side MCP is
+   trust-based: a vibe coder who bypasses MCP can call Bedrock with their
+   IRSA role unmetered. Ring 3 adds a small Bedrock proxy + NetworkPolicy
+   denying direct `bedrock-runtime` egress from tenant namespaces. Same
+   `meteredBedrockInvoke` runs inside the proxy.
+4. **Per-call Bedrock rate-limit** — concurrent CRs can each pass
+   `checkBudget` and collectively push over cap. Add a Postgres advisory
+   lock or Redis-backed token bucket per tenant.
+5. Service retirement CR.
+6. Secret rotation Lambdas (above).
+7. Multi-region — same chart, fleet repo grows a `regions/` axis.
+8. Drift surfaces — wire ArgoCD `app diff` results into a per-tenant feed.
 
 ### Explicitly NOT in Ring 1
 
