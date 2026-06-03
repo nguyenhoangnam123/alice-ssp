@@ -24,6 +24,7 @@ review surface and the cost team clean per-tenant attribution.
 | [02-use-cases.md](./02-use-cases.md) | You want feature-by-feature breakdown with sequence diagrams. Each use case links to the user stories it closes. |
 | [03-qualification.md](./03-qualification.md) | You want an honest read of where the platform is strong (automation, security) and where the gaps are (HA, image scanning, idle cleanup). Done vs not-yet for each quality. |
 | [04-system-design.md](./04-system-design.md) | You want the AWS + GitHub topology, Terraform module layout, tag schema, and end-to-end CR sequence in one place. |
+| [05-onboarding-walkthrough.md](./05-onboarding-walkthrough.md) | You want the click-by-click walkthrough at `portal.ssp.mightybee.dev` — every form field, every badge, with the real PR numbers / CR IDs / URLs from the live api-service onboarding. |
 
 **Engineering deep-dive**
 
