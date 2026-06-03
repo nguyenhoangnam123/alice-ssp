@@ -111,11 +111,11 @@ flowchart TB
 
 | Layer | Status | Why this works |
 | --- | --- | --- |
-| 1 — regex on description | Ring 1 extension to existing gate | Free, sub-ms; kills the obvious "ignore previous instructions" pattern before paying Bedrock. |
+| 1 — regex on description | **Ring 1 (live)** in `src/lib/policy/scanners.ts::scanInjection` | Catches 'ignore previous instructions', `[INST]` / chat-template tokens, fenced-block takeover (`\`\`\`reject` injected), 'you are now' / 'new system prompt'. Sub-ms; never reaches Bedrock. |
 | 2 — Bedrock Guardrails | Ring 2 (1 Terraform resource + invoke param) | Server-side denied topics + PROMPT_ATTACK + PII filters. |
-| 3 — Instruction isolation | Ring 2 | Wrap user text in `<description>...</description>`, tell the model to treat as data, **disable tool use** on the artifact call. Constitutional pattern: repeat platform rules at end of user message. |
-| 4 — Output validation | **Ring 1 (2 h work)** | Even if injection talks the AI into anything, the generated YAML still has to pass our deterministic parser asserting no `privileged:true`, no `hostNetwork`, no `hostPath`. Closes the loop. |
-| 5 — Human PR review | Ring 1 (live) | Final gate; reviewer sees the AI's reasoning attached to the diff. |
+| 3 — Instruction isolation | **Ring 1 (live)** in `src/lib/ai/prompts.ts` | Wraps user text in `<tenant_input>...</tenant_input>`; tells the model to treat as data; strips that delimiter from input so a tenant can't close the block. Constitutional reminder repeats platform rules at the end of the user message. |
+| 4 — Output validation | **Ring 1 (live)** in `src/lib/policy/output-validator.ts` | After AI returns, parses generated `values.yaml` + `argocd.yaml`. Asserts no `privileged:true`, `runAsUser>=10000`, no `hostNetwork/hostPID/hostIPC`, no `hostPath`, replica cap, ArgoCD `metadata.namespace=argocd` + finalizer + `tenant-<name>` destination. Called from orchestrator before PR open. |
+| 5 — Human PR review | **Ring 1 (live)** | Final gate; reviewer sees the AI's reasoning attached to the diff. |
 
 ### Prompt caching
 
@@ -151,11 +151,11 @@ flowchart LR
 
 ### Scanner stack — three layers
 
-| Layer | Mechanism | Best for |
+| Layer | Mechanism | Status |
 | --- | --- | --- |
-| **A — Regex pre-filter in policy gate** | Free, sub-ms; catches the obvious — email, IP address, AWS access key (`AKIA[0-9A-Z]{16}`), JWT, credit card, SSN, AWS account ID. | Triage; reject before paying Comprehend. |
-| **B — AWS Comprehend `DetectPiiEntities`** | Managed; covers EMAIL, ADDRESS, PHONE, NAME, CREDIT_DEBIT, etc. ~$0.0001 / 100 chars, ~200 ms. | Authoritative scan, only if A passes. |
-| **C — Bedrock Guardrails PII filter** | Server-side, no extra hop. AWS-maintained entity list. | Defence-in-depth on the AI call itself, after A + B. |
+| **A — Regex pre-filter in policy gate** | Free, sub-ms; covers email, IPv4, AWS access key (`AKIA[0-9A-Z]{16}`), JWT, US SSN, credit card (with Luhn validation to suppress false positives). | **Ring 1 (live)** in `src/lib/policy/scanners.ts::scanPii`. |
+| **B — AWS Comprehend `DetectPiiEntities`** | Managed; covers NAME, ADDRESS, PHONE, etc. ~$0.0001 / 100 chars, ~200 ms. | Ring 2 — authoritative scan after A passes. |
+| **C — Bedrock Guardrails PII filter** | Server-side, no extra hop. AWS-maintained entity list. | Ring 2 — defence-in-depth on the Bedrock call. |
 
 Recommended layering: A for triage (free, kills obvious), B for authoritative,
 C as belt-and-braces on the Bedrock invoke.
