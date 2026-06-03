@@ -47,6 +47,16 @@ export function CrModal({
   const [cpuRequestUnit, setCpuRequestUnit] = useState<CpuUnit>("m");
   const [cpuLimit, setCpuLimit] = useState<string>("");
   const [cpuLimitUnit, setCpuLimitUnit] = useState<CpuUnit>("m");
+  // image override — repository + tag. The orchestrator's mergeDesiredSpec
+  // accepts image.repository / image.tag in the payload; the AI prompt's
+  // allowlist enforces the registry (docker.io/library, gcr.io/distroless,
+  // public.ecr.aws/*, ghcr.io, or the tenant ECR).
+  const [imageRepo, setImageRepo] = useState<string>("");
+  const [imageTag, setImageTag] = useState<string>("");
+  // Service port — drives BOTH the chart's Service .Values.service.port AND
+  // the Deployment's containerPort (the chart locks them together). Set this
+  // to whatever your app listens on internally.
+  const [servicePort, setServicePort] = useState<string>("");
 
   // dynamic non-sensitive
   const [envs, setEnvs] = useState<KV[]>([newKV()]);
@@ -61,6 +71,9 @@ export function CrModal({
     setMemLimit("");
     setCpuRequest("");
     setCpuLimit("");
+    setImageRepo("");
+    setImageTag("");
+    setServicePort("");
     setEnvs([newKV()]);
     setSecrets([newKV()]);
   }
@@ -106,6 +119,30 @@ export function CrModal({
       summary.push(`cpu.lim=${formatted}`);
     }
     if (Object.keys(resources).length > 0) payload.resources = resources;
+
+    if (imageRepo.trim() !== "" || imageTag.trim() !== "") {
+      const img: Record<string, string> = {};
+      if (imageRepo.trim()) img.repository = imageRepo.trim();
+      if (imageTag.trim()) img.tag = imageTag.trim();
+      payload.image = img;
+      summary.push(
+        `image=${img.repository ?? "(unchanged)"}:${img.tag ?? "(unchanged)"}`,
+      );
+    }
+
+    if (servicePort.trim() !== "") {
+      const p = Number(servicePort);
+      if (Number.isFinite(p) && p > 0 && p < 65536) {
+        // The shared helm chart locks containerPort = .Values.service.port,
+        // so setting service.port here drives BOTH the K8s Service listener
+        // AND the pod's containerPort. We also pass containerPort explicitly
+        // so the AI prompt's output validator sees them aligned and doesn't
+        // reject on a perceived port mismatch.
+        payload.service = { port: p };
+        payload.containerPort = p;
+        summary.push(`port=${p}`);
+      }
+    }
 
     const validEnvs = envs.filter((e) => e.key.trim() !== "" && e.value !== "");
     if (validEnvs.length > 0) {
@@ -285,6 +322,39 @@ export function CrModal({
                   placeholder={cpuLimitUnit === "m" ? "e.g. 500" : "e.g. 2"}
                   disabled={busy}
                 />
+                <Row label="Image repository">
+                  <input
+                    value={imageRepo}
+                    onChange={(e) => setImageRepo(e.target.value)}
+                    placeholder="docker.io/library/nginx · ghcr.io/org/app · 195748744911.dkr.ecr.eu-west-1.amazonaws.com/svc"
+                    disabled={busy}
+                    className="font-mono w-full"
+                    style={{ width: "100%" }}
+                  />
+                </Row>
+                <Row label="Image tag">
+                  <input
+                    value={imageTag}
+                    onChange={(e) => setImageTag(e.target.value)}
+                    placeholder="e.g. 1.27-alpine · latest · v1.2.3"
+                    disabled={busy}
+                    className="font-mono w-full"
+                    style={{ width: "100%" }}
+                  />
+                </Row>
+                <Row label="Service port">
+                  <input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={servicePort}
+                    onChange={(e) => setServicePort(e.target.value)}
+                    placeholder="e.g. 80 (nginx default) · 3000 (Next.js) · 8080"
+                    disabled={busy}
+                    className="font-mono w-full"
+                    style={{ width: "100%" }}
+                  />
+                </Row>
               </section>
 
               {/* ----------------- Non-sensitive dynamic configs ----------------- */}
