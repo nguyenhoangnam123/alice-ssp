@@ -252,6 +252,7 @@ export function CrModal({
                   unit={memRequestUnit}
                   setUnit={(u) => setMemRequestUnit(u as MemUnit)}
                   units={["Mi", "Gi"]}
+                  placeholder="e.g. 256"
                   disabled={busy}
                 />
                 <ResourceRow
@@ -261,6 +262,7 @@ export function CrModal({
                   unit={memLimitUnit}
                   setUnit={(u) => setMemLimitUnit(u as MemUnit)}
                   units={["Mi", "Gi"]}
+                  placeholder="e.g. 512"
                   disabled={busy}
                 />
                 <ResourceRow
@@ -270,6 +272,7 @@ export function CrModal({
                   unit={cpuRequestUnit}
                   setUnit={(u) => setCpuRequestUnit(u as CpuUnit)}
                   units={["m", "cores"]}
+                  placeholder={cpuRequestUnit === "m" ? "e.g. 200" : "e.g. 1"}
                   disabled={busy}
                 />
                 <ResourceRow
@@ -279,6 +282,7 @@ export function CrModal({
                   unit={cpuLimitUnit}
                   setUnit={(u) => setCpuLimitUnit(u as CpuUnit)}
                   units={["m", "cores"]}
+                  placeholder={cpuLimitUnit === "m" ? "e.g. 500" : "e.g. 2"}
                   disabled={busy}
                 />
               </section>
@@ -369,6 +373,7 @@ function ResourceRow({
   unit,
   setUnit,
   units,
+  placeholder,
   disabled,
 }: {
   label: string;
@@ -377,24 +382,31 @@ function ResourceRow({
   unit: string;
   setUnit: (u: string) => void;
   units: string[];
+  placeholder?: string;
   disabled?: boolean;
 }) {
+  // Grid (not flex) so the unit selector stays at a fixed 5rem regardless
+  // of any global `select { width: 100% }` styles, and the value input
+  // takes everything else.
   return (
     <Row label={label}>
-      <div className="flex gap-2">
+      <div className="grid grid-cols-[1fr_5rem] gap-2 items-stretch w-full">
         <input
           type="number"
           min={0}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="e.g. 256"
+          placeholder={placeholder ?? "e.g. 256"}
           disabled={disabled}
-          className="flex-1 font-mono"
+          className="font-mono w-full"
+          style={{ width: "100%" }}
         />
         <select
           value={unit}
           onChange={(e) => setUnit(e.target.value)}
           disabled={disabled}
+          className="w-full"
+          style={{ width: "100%" }}
         >
           {units.map((u) => (
             <option key={u} value={u}>
