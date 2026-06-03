@@ -124,7 +124,13 @@ export async function meteredBedrockInvoke(args: {
   traceId: string;
   parentSpanId?: string;
   tenantId: string;
-  crId: string;
+  /**
+   * CR ID to persist on the llm_calls row. Pass ONLY when this call is part of
+   * processing a real ChangeRequest — otherwise the FK to change_requests will
+   * fail and the row silently drops. Use the traceId field for synthetic IDs
+   * (chat sessions, batch jobs).
+   */
+  crId?: string;
   modelId: string;
   body: Record<string, unknown>;
 }): Promise<MeteredBedrockResult> {
@@ -194,7 +200,9 @@ export async function meteredBedrockInvoke(args: {
       try {
         await db.insert(llmCalls).values({
           id: ulid(),
-          changeRequestId: args.crId,
+          // Only set the FK when the caller has a real CR — synthetic trace IDs
+          // (chat sessions like 'svc:<svc-id>') would FK-violate.
+          changeRequestId: args.crId ?? null,
           tenantId: args.tenantId,
           modelId: args.modelId,
           inputTokens: usage.inputTokens,
@@ -205,7 +213,10 @@ export async function meteredBedrockInvoke(args: {
           latencyMs,
         });
       } catch (err) {
-        console.error("llm_calls insert failed (non-fatal)", err);
+        // We log instead of throw so a metering hiccup doesn't break the user's
+        // chat reply. Pre-fix this masked an FK violation; the warning level
+        // tells a future reader to look here.
+        console.warn("llm_calls insert failed (non-fatal)", err);
       }
 
       // Emit the MCP-shaped EMF event regardless of DB outcome — CloudWatch is

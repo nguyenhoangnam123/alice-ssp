@@ -92,6 +92,10 @@ export async function POST(req: NextRequest) {
   }
 
   const ctx = await resolveChatCtx();
+  // traceId is service-scoped so all chat spans for this service join on a
+  // single key. We do NOT pass crId because the chat isn't tied to a real
+  // ChangeRequest; passing the synthetic "svc:" id would FK-violate llm_calls.
+  const traceId = ctx.crId;
 
   // ----- The cost guardrail. Same checkBudget() the orchestrator uses. -----
   const budget = await checkBudget(ctx.tenantId);
@@ -130,6 +134,10 @@ export async function POST(req: NextRequest) {
     process.env.BEDROCK_CHAT_MODEL ??
     process.env.BEDROCK_MODEL_ID ??
     "eu.anthropic.claude-opus-4-6-v1";
+  // System prompt deliberately model-agnostic: we don't tell the model what
+  // model it is because (a) it lies anyway, (b) we may swap the
+  // BEDROCK_CHAT_MODEL env without redeploying, and (c) the platform answer is
+  // 'whatever the cost dashboard says'.
   const reqBody = {
     anthropic_version: "bedrock-2023-05-31",
     max_tokens: 1024,
@@ -138,8 +146,9 @@ export async function POST(req: NextRequest) {
         type: "text",
         text:
           "You are SSP Chat, the Alice self-service portal's bundled chat. " +
-          "Be concise. If asked who you are, say you're the platform's demo chat " +
-          "running on Claude Haiku 4.5 through Bedrock, metered by the SSP cost guardrail.",
+          "Be concise. Every reply is billed via the platform's metered " +
+          "Bedrock wrapper; ask the operator for the exact model ID if " +
+          "anyone wants to know.",
         cache_control: { type: "ephemeral" },
       },
     ],
@@ -148,9 +157,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await meteredBedrockInvoke({
-      traceId: ctx.crId,
+      traceId,
       tenantId: ctx.tenantId,
-      crId: ctx.crId,
+      // No crId — chat isn't tied to a CR row. llm_calls.change_request_id
+      // stays NULL for chat-originated calls; aggregate queries filter by
+      // tenant_id anyway.
       modelId: model,
       body: reqBody,
     });
