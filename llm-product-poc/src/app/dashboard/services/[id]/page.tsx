@@ -16,10 +16,11 @@ import { StatusBadge } from "@/components/status-badge";
 import { CrModal } from "@/components/cr-modal";
 import { RevisionsTimeline } from "@/components/revisions-timeline";
 import { UsageWidget } from "@/components/usage-widget";
-import { SecretsForm } from "@/components/secrets-form";
 import { ServiceTabs } from "@/components/service-tabs";
 import { McpAuditLogs, type AuditEvent } from "@/components/mcp-audit-logs";
+import { SecretKeysReadonly } from "@/components/secret-keys-readonly";
 import { guardedActions } from "@/lib/db/schema";
+import { listKeys as listSecretKeys } from "@/lib/secrets/manager";
 
 export const dynamic = "force-dynamic";
 
@@ -144,6 +145,16 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
       crId: r.crId,
     })),
   };
+
+  // ---- Read-only listing of the secret KEYS currently set on this service.
+  // Editing is by CR only — accessed through the "Request changes" button at
+  // the top of the page, not from any form on this tab.
+  let secretKeys: { key: string; masked: string }[] = [];
+  try {
+    secretKeys = await listSecretKeys(svc.tenantId, svc.id);
+  } catch (err) {
+    console.warn("listSecretKeys failed (non-fatal)", err);
+  }
 
   // ---- MCP audit logs (for the third tab). Pulls last 50 of each, merges by
   // ts desc, caps at 100. Both tables are tenant-scoped.
@@ -300,7 +311,7 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
                   callsThisMonth={usage.callsThisMonth}
                   recentCalls={usage.recentCalls}
                 />
-                <SecretsForm serviceId={svc.id} />
+                <SecretKeysReadonly items={secretKeys} />
               </div>
             ),
           },
