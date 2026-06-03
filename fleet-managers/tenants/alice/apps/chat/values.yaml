@@ -5,24 +5,27 @@ tenant:
 
 ssp:
   serviceId: 01KT78ZPKE5JFAF17NJ5D9BJMY
-  changeRequestId: 01KT78ZPKE3C1MHE8YW3NC5G3N
+  changeRequestId: 01KT7ARHGWZ4NJN92X2M7RKN3J
+
+image:
+  repository: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal
+  tag: "f561c02187fc302ec03b0c22cb4627b9c6f38472"
+  pullPolicy: IfNotPresent
 
 replicaCount: 1
 
-image:
-  repository: docker.io/library/nginx
-  tag: "1.27-alpine"
-  pullPolicy: IfNotPresent
+service:
+  port: 3000
+
+containerPort: 3000
 
 resources:
   requests:
-    cpu: 100m
-    memory: 128Mi
-  limits:
-    cpu: 500m
+    cpu: 250m
     memory: 256Mi
-
-containerPort: 8080
+  limits:
+    cpu: "1"
+    memory: 512Mi
 
 route:
   enabled: true
@@ -31,17 +34,3 @@ route:
   tls:
     enabled: true
     secretName: chat-tls
-
-livenessProbe:
-  httpGet:
-    path: /healthz
-    port: 8080
-  initialDelaySeconds: 5
-  periodSeconds: 10
-
-readinessProbe:
-  httpGet:
-    path: /healthz
-    port: 8080
-  initialDelaySeconds: 3
-  periodSeconds: 5
