@@ -9,6 +9,10 @@
 // stdio-server in mcp-server/; the portal owns its own process so the IPC
 // overhead would be silly.
 
+import { ulid } from "ulid";
+import { db } from "@/lib/db";
+import { guardedActions } from "@/lib/db/schema";
+
 export type SpanStatus = "ok" | "error";
 export type GuardedActionOutcome = "allowed" | "blocked" | "warning";
 
@@ -114,6 +118,7 @@ export function emitGuardedAction(args: {
   outcome: GuardedActionOutcome;
   detail?: string;
 }) {
+  // EMF on stderr — CW Logs is the authoritative store.
   nowJsonLine({
     service: "ssp",
     event: "guarded_action",
@@ -125,4 +130,21 @@ export function emitGuardedAction(args: {
     detail: args.detail,
     ts: new Date().toISOString(),
   });
+  // Also persist for in-portal queries (MCP audit logs tab). Fire-and-forget
+  // — a DB hiccup must not break the calling code path (policy gate, budget
+  // guard, etc.). CW EMF emit above is the durable record.
+  void db
+    .insert(guardedActions)
+    .values({
+      id: ulid(),
+      tenantId: args.tenantId,
+      actorUserId: args.actorUserId,
+      action: args.action,
+      resource: args.resource,
+      outcome: args.outcome,
+      detail: args.detail,
+    })
+    .catch((err) =>
+      console.warn("guarded_actions insert failed (non-fatal)", err),
+    );
 }

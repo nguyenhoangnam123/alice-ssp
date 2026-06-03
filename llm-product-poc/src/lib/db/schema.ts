@@ -192,6 +192,33 @@ export const serviceRevisions = pgTable(
   }),
 );
 
+// Persisted audit log for guarded_action events. Emitted in parallel with the
+// CW EMF event by emitGuardedAction(). CW is still the authority; this table
+// is the in-portal query surface for the MCP audit logs tab.
+export const guardedActions = pgTable(
+  "guarded_actions",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    actorUserId: text("actor_user_id"),
+    action: text("action").notNull(),
+    resource: text("resource"),
+    outcome: text("outcome").notNull(), // "allowed" | "blocked" | "warning"
+    detail: text("detail"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    tenantTimeIdx: index("guarded_actions_tenant_time_idx").on(
+      t.tenantId,
+      t.createdAt,
+    ),
+  }),
+);
+
 // Per-call Bedrock audit. Append-only; the budget guard reads SUM(cost_usd)
 // from this table, dashboards render rate-of-spend, security audits the model
 // allowlist drift via DISTINCT model_id.

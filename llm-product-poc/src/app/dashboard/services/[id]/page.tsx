@@ -17,6 +17,9 @@ import { CrModal } from "@/components/cr-modal";
 import { RevisionsTimeline } from "@/components/revisions-timeline";
 import { UsageWidget } from "@/components/usage-widget";
 import { SecretsForm } from "@/components/secrets-form";
+import { ServiceTabs } from "@/components/service-tabs";
+import { McpAuditLogs, type AuditEvent } from "@/components/mcp-audit-logs";
+import { guardedActions } from "@/lib/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -142,6 +145,63 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
     })),
   };
 
+  // ---- MCP audit logs (for the third tab). Pulls last 50 of each, merges by
+  // ts desc, caps at 100. Both tables are tenant-scoped.
+  const recentLlm = await db
+    .select({
+      id: llmCalls.id,
+      model: llmCalls.modelId,
+      inputTokens: llmCalls.inputTokens,
+      outputTokens: llmCalls.outputTokens,
+      cacheReadTokens: llmCalls.cacheReadTokens,
+      costUsd: llmCalls.costUsd,
+      latencyMs: llmCalls.latencyMs,
+      createdAt: llmCalls.createdAt,
+      crId: llmCalls.changeRequestId,
+    })
+    .from(llmCalls)
+    .where(eq(llmCalls.tenantId, svc.tenantId))
+    .orderBy(desc(llmCalls.createdAt))
+    .limit(50);
+  const recentGuarded = await db
+    .select({
+      id: guardedActions.id,
+      action: guardedActions.action,
+      actorUserId: guardedActions.actorUserId,
+      resource: guardedActions.resource,
+      outcome: guardedActions.outcome,
+      detail: guardedActions.detail,
+      createdAt: guardedActions.createdAt,
+    })
+    .from(guardedActions)
+    .where(eq(guardedActions.tenantId, svc.tenantId))
+    .orderBy(desc(guardedActions.createdAt))
+    .limit(50);
+  const auditEvents: AuditEvent[] = [
+    ...recentLlm.map<AuditEvent>((r) => ({
+      kind: "llm_call",
+      ts: r.createdAt.toISOString(),
+      model: r.model,
+      inputTokens: r.inputTokens,
+      outputTokens: r.outputTokens,
+      cacheReadTokens: r.cacheReadTokens,
+      costUsd: Number(r.costUsd),
+      latencyMs: r.latencyMs,
+      crId: r.crId,
+    })),
+    ...recentGuarded.map<AuditEvent>((r) => ({
+      kind: "guarded_action",
+      ts: r.createdAt.toISOString(),
+      action: r.action,
+      actorUserId: r.actorUserId,
+      resource: r.resource,
+      outcome: r.outcome,
+      detail: r.detail,
+    })),
+  ]
+    .sort((a, b) => (a.ts < b.ts ? 1 : -1))
+    .slice(0, 100);
+
   // Serialize for the client component (Date → ISO string, widen enum types to string).
   const revisionsForClient = revs.map((r) => ({
     id: r.id,
@@ -182,49 +242,75 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
         <CrModal action={newChangeRequest} serviceId={svc.id} serviceName={svc.name} />
       </header>
 
-      <UsageWidget
-        monthSpentUsd={usage.monthSpentUsd}
-        monthCapUsd={usage.monthCapUsd}
-        callsThisMonth={usage.callsThisMonth}
-        recentCalls={usage.recentCalls}
+      <ServiceTabs
+        tabs={[
+          {
+            id: "versions",
+            label: "Versions",
+            content: (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-lg mb-2">Revisions</h2>
+                  <RevisionsTimeline revisions={revisionsForClient} />
+                </div>
+                <div>
+                  <h2 className="text-lg mb-2">Change requests</h2>
+                  {crs.length === 0 ? (
+                    <p className="text-muted">None.</p>
+                  ) : (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>summary</th>
+                          <th>status</th>
+                          <th>created</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {crs.map((c) => (
+                          <tr key={c.id}>
+                            <td>
+                              <Link href={`/dashboard/change-requests/${c.id}`}>
+                                {c.summary}
+                              </Link>
+                            </td>
+                            <td>
+                              <StatusBadge value={c.status} />
+                            </td>
+                            <td className="text-muted text-sm">
+                              {c.createdAt.toISOString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            ),
+          },
+          {
+            id: "ai",
+            label: "AI settings",
+            content: (
+              <div className="space-y-6">
+                <UsageWidget
+                  monthSpentUsd={usage.monthSpentUsd}
+                  monthCapUsd={usage.monthCapUsd}
+                  callsThisMonth={usage.callsThisMonth}
+                  recentCalls={usage.recentCalls}
+                />
+                <SecretsForm serviceId={svc.id} />
+              </div>
+            ),
+          },
+          {
+            id: "audit",
+            label: "MCP audit logs",
+            content: <McpAuditLogs events={auditEvents} />,
+          },
+        ]}
       />
-
-      <SecretsForm serviceId={svc.id} />
-
-      <div>
-        <h2 className="text-lg mb-2">Revisions</h2>
-        <RevisionsTimeline revisions={revisionsForClient} />
-      </div>
-
-      <div>
-        <h2 className="text-lg mb-2">Change requests</h2>
-        {crs.length === 0 ? (
-          <p className="text-muted">None.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>summary</th>
-                <th>status</th>
-                <th>created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {crs.map((c) => (
-                <tr key={c.id}>
-                  <td>
-                    <Link href={`/dashboard/change-requests/${c.id}`}>{c.summary}</Link>
-                  </td>
-                  <td>
-                    <StatusBadge value={c.status} />
-                  </td>
-                  <td className="text-muted text-sm">{c.createdAt.toISOString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
     </section>
   );
 }

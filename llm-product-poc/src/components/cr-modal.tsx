@@ -20,7 +20,7 @@ export function CrModal({
 
   return (
     <>
-      <button onClick={() => setOpen(true)}>Update service (new CR)</button>
+      <button onClick={() => setOpen(true)}>Request changes</button>
 
       {open && (
         <div
