@@ -26,10 +26,14 @@ ingress:
 route:
   enabled: true
   host: portal.ssp.mightybee.dev
+  # Additional hostnames sharing the same backend Service. The portal app
+  # serves /chat (and its sub-paths) for chat.ssp.mightybee.dev visitors.
+  additionalHosts:
+    - chat.ssp.mightybee.dev
   vpnInternal: false
   tls: true   # attach to https listener (port 443) — ACM cert from LBConfig
   annotations:
-    external-dns.alpha.kubernetes.io/hostname: portal.ssp.mightybee.dev
+    external-dns.alpha.kubernetes.io/hostname: portal.ssp.mightybee.dev,chat.ssp.mightybee.dev
 
 resources:
   requests:

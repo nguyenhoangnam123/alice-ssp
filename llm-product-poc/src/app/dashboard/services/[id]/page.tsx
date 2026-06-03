@@ -2,13 +2,20 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { ulid } from "ulid";
 import { db } from "@/lib/db";
-import { services, changeRequests, serviceRevisions, tenants } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import {
+  services,
+  changeRequests,
+  serviceRevisions,
+  tenants,
+  llmCalls,
+} from "@/lib/db/schema";
+import { eq, desc, and, gte, sql } from "drizzle-orm";
 import { requireTenantAdmin, requireUser } from "@/lib/auth/rbac";
 import { processChangeRequest } from "@/lib/workflow/orchestrator";
 import { StatusBadge } from "@/components/status-badge";
 import { CrModal } from "@/components/cr-modal";
 import { RevisionsTimeline } from "@/components/revisions-timeline";
+import { UsageWidget } from "@/components/usage-widget";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +90,57 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
     .orderBy(desc(serviceRevisions.createdAt))
     .limit(50);
 
+  // ---- Per-tenant Bedrock usage for the widget. Same source-of-truth llm_calls
+  // table the orchestrator's checkBudget() reads. Limited to month-to-date so a
+  // long-running tenant doesn't pull down the whole history on every page render.
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  const usageAgg = await db
+    .select({
+      callsThisMonth: sql<string>`count(*)`,
+      monthSpent: sql<string>`coalesce(sum(${llmCalls.costUsd}), 0)`,
+    })
+    .from(llmCalls)
+    .where(
+      and(
+        eq(llmCalls.tenantId, svc.tenantId),
+        gte(llmCalls.createdAt, monthStart),
+      ),
+    );
+  const recentCallsRows = await db
+    .select({
+      id: llmCalls.id,
+      model: llmCalls.modelId,
+      inputTokens: llmCalls.inputTokens,
+      outputTokens: llmCalls.outputTokens,
+      cacheReadTokens: llmCalls.cacheReadTokens,
+      costUsd: llmCalls.costUsd,
+      latencyMs: llmCalls.latencyMs,
+      createdAt: llmCalls.createdAt,
+      crId: llmCalls.changeRequestId,
+    })
+    .from(llmCalls)
+    .where(eq(llmCalls.tenantId, svc.tenantId))
+    .orderBy(desc(llmCalls.createdAt))
+    .limit(8);
+  const usage = {
+    monthSpentUsd: Number(usageAgg[0]?.monthSpent ?? "0"),
+    monthCapUsd: Number(tenant?.bedrockMonthlyCapUsd ?? "5"),
+    callsThisMonth: Number(usageAgg[0]?.callsThisMonth ?? "0"),
+    recentCalls: recentCallsRows.map((r) => ({
+      id: r.id,
+      model: r.model,
+      inputTokens: r.inputTokens,
+      outputTokens: r.outputTokens,
+      cacheReadTokens: r.cacheReadTokens,
+      costUsd: Number(r.costUsd),
+      latencyMs: r.latencyMs,
+      createdAt: r.createdAt.toISOString(),
+      crId: r.crId,
+    })),
+  };
+
   // Serialize for the client component (Date → ISO string, widen enum types to string).
   const revisionsForClient = revs.map((r) => ({
     id: r.id,
@@ -122,6 +180,13 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
         </div>
         <CrModal action={newChangeRequest} serviceId={svc.id} serviceName={svc.name} />
       </header>
+
+      <UsageWidget
+        monthSpentUsd={usage.monthSpentUsd}
+        monthCapUsd={usage.monthCapUsd}
+        callsThisMonth={usage.callsThisMonth}
+        recentCalls={usage.recentCalls}
+      />
 
       <div>
         <h2 className="text-lg mb-2">Revisions</h2>
