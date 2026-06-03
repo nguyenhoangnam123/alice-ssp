@@ -221,6 +221,16 @@ flowchart LR
 - **Tabbed service detail page** — Versions / AI settings / MCP audit
   logs. The audit tab merges `llm_calls` + persisted
   `guarded_actions` events, ordered by time.
+- **Per-service HTTPRoute (canonical Gateway API)** — every helm release
+  renders its own HTTPRoute. Only the upstream Gateway (`alb-public-shared`
+  in `gateway-system`) is shared. The chart supports a route-only mode for
+  the bridge case (see `platform-apps/chat-route/`); standard service
+  releases render Deployment + Service + HTTPRoute as before.
+- **Host-scoped Next.js middleware** — `src/middleware.ts` gates
+  `chat.ssp.mightybee.dev` to `/chat`, `/api/chat`, `/api/auth`, and
+  static assets; everything else returns 404. Prevents the chat host
+  from serving the admin portal — the proper fix is the Ring-3 chat-as-
+  tenant migration; this is the interim guard.
 - **Desired-spec shadow column** (`services.desired_spec`) — populated
   on every CR → applied; rendered on AI settings tab. Foundation for
   the Ring-3 controller flip.

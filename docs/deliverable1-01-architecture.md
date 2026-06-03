@@ -123,6 +123,15 @@ Five planes, each with its own shared/per-app split:
   one Gateway. A tenant claims a hostname only if their namespace carries the
   `ssp.platform/tenant=<name>` label, which **only the Terraform tenant module
   sets**. A tenant cannot claim another tenant's hostname.
+- **Per-service HTTPRoute, single shared Gateway** — every helm release of
+  `fleet-managers/helm/app/` renders **its own** HTTPRoute. The Gateway is the
+  only resource shared. Multiple HTTPRoutes attach to the same Gateway, each
+  claiming its own hostname and backendRef'ing its own Service. The chart
+  also supports a **route-only** mode (`deployment.enabled=false +
+  service.enabled=false + route.backendService=<other-service>`) for the
+  rare case where two hostnames legitimately share one backend — see
+  `fleet-managers/platform-apps/chat-route/values.yaml`, which uses this
+  pattern as a bridge to the Ring-3 chat-as-tenant migration.
 - **Per-tenant IRSA, never a shared role** — keeps the blast radius of a
   compromised pod inside one tenant's resources.
 - **Postgres trigger pinning `tenants.domain` as immutable** — preserves
