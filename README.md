@@ -49,7 +49,9 @@ The CR-creation guardrails are exercised by `tests/fuzz-guardrails.sh` —
 12 adversarial CRs (prompt-injection variants + PII variants + an
 output-YAML-violating valid description) submitted in sequence; the
 script prints what each one rejected on and shows the redacted audit
-detail. See `tests/fuzz-guardrails.md` for expected outcomes.
+detail. See `tests/fuzz-guardrails.md` for the expected outcomes and
+`tests/fuzz-guardrails-results.md` for a recorded run (Bedrock spend
+$0.134 — zero from the 11 cases that hit the cheap layers).
 
 ## Read first — Deliverable 1 (Design Doc)
 

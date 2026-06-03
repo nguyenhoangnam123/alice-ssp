@@ -258,6 +258,27 @@ page — workflow steps with timestamps, AI summary, route host, last probe
 time. Rejected revisions stay in the timeline forever as audit evidence —
 "we tried to ship X, the platform refused, here's why."
 
+## Evidence
+
+A 12-case adversarial sweep against the live portal at image
+`9ecdc62` is committed at
+[`tests/fuzz-guardrails.sh`](../tests/fuzz-guardrails.sh) with the run
+output captured in
+[`tests/fuzz-guardrails-results.md`](../tests/fuzz-guardrails-results.md):
+
+- 4 prompt-injection variants → all caught at policy gate (layer 1),
+  Bedrock never invoked.
+- 6 PII variants (incl. Luhn-validated credit card) → all caught at
+  policy gate (layer A), audit details **redacted** before storage.
+- 1 combined injection + PII → rejected with both findings.
+- 1 baseline valid → reached `platform_reviewing`, PR opened.
+- 1 output-validator-targeted → rejected upstream by the AI honouring
+  the system-prompt allowlist; layer 4 didn't need to fire.
+
+**Bedrock spend on the sweep: $0.134** — exclusively from the two cases
+that legitimately reached the model. Zero tokens spent on the 11 cases
+that hit the cheap layers.
+
 ## Honest gaps (Ring 2+ work)
 
 - **Mock data path** — when `AI_MODE=mock` (used in CI), validation is bypassed
