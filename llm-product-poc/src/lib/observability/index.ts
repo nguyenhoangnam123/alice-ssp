@@ -1,14 +1,14 @@
-export { computeCostUSD, PRICING } from "./pricing.js";
+export { computeCostUSD, PRICING } from "./pricing";
 export {
   emitLlmCall,
   emitGuardedAction,
   type SpanStatus,
   type GuardedActionOutcome,
-} from "./emit.js";
-export { startSpan, endSpan, withSpan } from "./tracing.js";
+} from "./emit";
+export { startSpan, endSpan, withSpan } from "./tracing";
 export {
   meteredBedrockInvoke,
   checkBudget,
   BudgetExceededError,
   type BudgetCheck,
-} from "./metered-invoke.js";
+} from "./metered-invoke";

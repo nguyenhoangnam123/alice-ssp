@@ -3,7 +3,7 @@
 // a single CloudWatch Logs Insights filter on trace_id=<cr_id> returns the
 // whole tool-call chain.
 
-import { emitSpan, type LiveSpan, type SpanStatus } from "./emit.js";
+import { emitSpan, type LiveSpan, type SpanStatus } from "./emit";
 
 const liveSpans = new Map<string, LiveSpan>();
 

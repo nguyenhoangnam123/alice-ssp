@@ -21,9 +21,9 @@ import {
 } from "@aws-sdk/client-bedrock-runtime";
 import { db } from "@/lib/db";
 import { llmCalls, tenants } from "@/lib/db/schema";
-import { computeCostUSD } from "./pricing.js";
-import { emitLlmCall, emitGuardedAction } from "./emit.js";
-import { withSpan } from "./tracing.js";
+import { computeCostUSD } from "./pricing";
+import { emitLlmCall, emitGuardedAction } from "./emit";
+import { withSpan } from "./tracing";
 
 export class BudgetExceededError extends Error {
   constructor(
