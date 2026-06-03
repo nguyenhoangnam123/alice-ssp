@@ -80,6 +80,49 @@ resource "kubectl_manifest" "portal_github_external_secret" {
   depends_on        = [kubernetes_namespace_v1.portal]
 }
 
+# Cognito app-client secret. The hosted UI / OAuth code flow doesn't need it,
+# but USER_PASSWORD_AUTH InitiateAuth requires a SECRET_HASH derived from this
+# secret + username + client_id. The portal computes the hash server-side at
+# sign-in time so the secret never leaves the cluster.
+# Secret created manually via:
+#   aws secretsmanager create-secret --name ssp/portal/cognito \
+#     --kms-key-id alias/ssp-platform-secrets \
+#     --secret-string '{"client_secret":"<from describe-user-pool-client>"}'
+resource "kubectl_manifest" "portal_cognito_external_secret" {
+  yaml_body = yamlencode({
+    apiVersion = "external-secrets.io/v1beta1"
+    kind       = "ExternalSecret"
+    metadata = {
+      name      = "portal-cognito"
+      namespace = kubernetes_namespace_v1.portal.metadata[0].name
+    }
+    spec = {
+      refreshInterval = "1h"
+      secretStoreRef = {
+        name = "aws-secretsmanager"
+        kind = "ClusterSecretStore"
+      }
+      target = {
+        name           = "portal-cognito"
+        creationPolicy = "Owner"
+        template = {
+          engineVersion = "v2"
+          data = {
+            COGNITO_CLIENT_SECRET = "{{ .client_secret }}"
+          }
+        }
+      }
+      dataFrom = [{
+        extract = {
+          key = "ssp/portal/cognito"
+        }
+      }]
+    }
+  })
+  server_side_apply = true
+  depends_on        = [kubernetes_namespace_v1.portal]
+}
+
 # Shared bearer token used by the MCP server running inside tenant pods to
 # call the portal's /api/internal/{budget,llm-calls} endpoints. Symmetric
 # secret for MVP1; Ring 2 swaps for short-lived per-tenant JWTs.

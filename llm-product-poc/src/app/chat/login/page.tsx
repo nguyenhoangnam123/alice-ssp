@@ -5,6 +5,16 @@
 import { redirect } from "next/navigation";
 import { CognitoIdentityProviderClient, InitiateAuthCommand } from "@aws-sdk/client-cognito-identity-provider";
 import { cookies } from "next/headers";
+import { createHmac } from "node:crypto";
+
+function secretHash(username: string, clientId: string, clientSecret: string) {
+  // Cognito's required SECRET_HASH when the app client has a client secret.
+  // HMAC-SHA256(username + client_id) base64-encoded. Computed server-side
+  // so the secret never crosses the wire.
+  return createHmac("sha256", clientSecret)
+    .update(username + clientId)
+    .digest("base64");
+}
 
 async function signIn(formData: FormData) {
   "use server";
@@ -17,12 +27,21 @@ async function signIn(formData: FormData) {
   const client = new CognitoIdentityProviderClient({
     region: process.env.COGNITO_REGION ?? "eu-west-1",
   });
+  const clientId = process.env.COGNITO_CLIENT_ID!;
+  const clientSecret = process.env.COGNITO_CLIENT_SECRET;
+  const authParams: Record<string, string> = {
+    USERNAME: username,
+    PASSWORD: password,
+  };
+  if (clientSecret) {
+    authParams.SECRET_HASH = secretHash(username, clientId, clientSecret);
+  }
   try {
     const res = await client.send(
       new InitiateAuthCommand({
         AuthFlow: "USER_PASSWORD_AUTH",
-        ClientId: process.env.COGNITO_CLIENT_ID!,
-        AuthParameters: { USERNAME: username, PASSWORD: password },
+        ClientId: clientId,
+        AuthParameters: authParams,
       }),
     );
     const id = res.AuthenticationResult?.IdToken;
@@ -88,9 +107,6 @@ export default async function ChatLoginPage({
         )}
         <button type="submit">Sign in</button>
       </form>
-      <p className="text-xs text-muted mt-4">
-        Cognito user pool: <code>{process.env.COGNITO_USER_POOL_ID}</code>
-      </p>
     </section>
   );
 }
