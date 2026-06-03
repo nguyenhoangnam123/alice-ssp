@@ -322,6 +322,15 @@ export function CrModal({
                   placeholder={cpuLimitUnit === "m" ? "e.g. 500" : "e.g. 2"}
                   disabled={busy}
                 />
+                <p className="text-xs text-muted mt-2 pt-2 border-t border-border/40">
+                  <strong>Image override · hot-fix only.</strong> Default
+                  behaviour: every CR generates a Dockerfile + CI workflow;
+                  CI builds the image from the service&apos;s git repo and
+                  pushes to ECR. Set repository + tag below only when you
+                  want to pin a specific external image (shared monorepo,
+                  emergency rollback, etc.) — leave blank for the default
+                  build-from-source path.
+                </p>
                 <Row label="Image repository">
                   <input
                     value={imageRepo}

@@ -123,6 +123,18 @@ Five planes, each with its own shared/per-app split:
   one Gateway. A tenant claims a hostname only if their namespace carries the
   `ssp.platform/tenant=<name>` label, which **only the Terraform tenant module
   sets**. A tenant cannot claim another tenant's hostname.
+- **Image derived from source by default** — every CR (`payload.kind` not
+  `secret`) generates a Dockerfile + GitHub Actions workflow alongside the
+  helm values + ArgoCD Application. CI builds the image from the service's
+  `git_repo` on PR-merge, tags it with `${{ github.sha }}`, pushes to the
+  tenant's ECR repository (or the platform ECR for shared apps), and the
+  generated `values.yaml` references that tag. The **image is derived from
+  the source**, not chosen. A CR may set `image.repository` + `image.tag` in
+  its payload as a **hot-fix override** — used when source is shared (chat
+  bundled in the portal monorepo), when pinning a known-good public image,
+  or for emergency rollback. The Dockerfile + CI workflow still ship in the
+  PR for record (so a follow-up "back to building from source" CR doesn't
+  start from scratch); the deploy reads only `values.yaml`.
 - **Per-service HTTPRoute, single shared Gateway** — every helm release of
   `fleet-managers/helm/app/` renders **its own** HTTPRoute. The Gateway is the
   only resource shared. Multiple HTTPRoutes attach to the same Gateway, each

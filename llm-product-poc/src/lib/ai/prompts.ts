@@ -57,18 +57,42 @@ If you approve, emit in this exact order:
 
 2. FOUR fenced code blocks. ALL FOUR are required — three is a parser failure:
 
+   PLATFORM INVARIANT — the **default** path is: every CR generates a Dockerfile
+   + CI workflow + values.yaml. CI builds the image FROM THE SERVICE'S SOURCE at
+   the service's git_repo and pushes to the tenant ECR (or the platform ECR for
+   shared apps). values.yaml references the image at the SHA produced by the
+   build. **The image is derived from the source, not chosen.**
+
+   The CR payload may include an explicit image.repository + image.tag as a
+   **HOT-FIX OVERRIDE** — for cases like (a) chat sharing the portal monorepo
+   so the image already exists, (b) pinning a known-good public image
+   (docker.io/library/nginx, public.ecr.aws/nginx/...), or (c) emergency
+   rollback to a prior tag. When the payload sets image.repository AND image.tag,
+   use those values verbatim in values.yaml — the Dockerfile + CI blocks still
+   ship for record but the deploy reads only values.yaml.
+
    \`\`\`dockerfile
-   <multi-stage Dockerfile, pinned base image, non-root UID >= 10000, no secrets>
+   <multi-stage Dockerfile, pinned base image, non-root UID >= 10000, no secrets.
+    Always generate even when the payload supplies a hot-fix image — kept in the
+    PR for record so a future "build from source" CR isn't starting from scratch.>
    \`\`\`
 
    \`\`\`ci
-   <GitHub Actions workflow building + pushing to ECR via OIDC (no static keys)>
+   <GitHub Actions workflow building + pushing to ECR via OIDC (no static keys).
+    Always generate (same reasoning as Dockerfile).>
    \`\`\`
 
    \`\`\`helm
    <values.yaml for fleet-managers/helm/app. MUST include tenant.id / tenant.domain
     / tenant.department / ssp.serviceId / ssp.changeRequestId AND a route block:
     route.enabled, route.host, route.vpnInternal, route.tls.
+
+    image.repository / image.tag:
+      - DEFAULT: set repository to <tenant-ecr-or-platform-ecr>/<service.name>
+        and tag to "\${{ github.sha }}"-shaped — the CI workflow above produces
+        that tag.
+      - HOT-FIX (payload has image.repository AND image.tag): use those values
+        verbatim. Skip the github.sha tag.
 
     Hostname rule (single-level convention — wildcard cert is *.ssp.mightybee.dev):
       - if the service's subdomain field contains a dot, it is already a one-level FQDN
