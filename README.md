@@ -37,29 +37,17 @@ To onboard a service end-to-end, see
 [docs/05-onboarding-walkthrough.md](./docs/05-onboarding-walkthrough.md) —
 click-by-click using the live portal.
 
-## Read first (mapped to assessment spec)
+## Read first — Deliverable 1 (Design Doc)
 
-The spec asks for eight things in the design doc. Each lives in its own file:
+Five files, mapped 1:1 to the spec's eight Deliverable-1 sections.
 
-| Spec section | Where |
+| File | Spec sections covered |
 | --- | --- |
-| **Target architecture** + end-to-end path | [04-system-design.md](./docs/04-system-design.md) + [architecture.md](./docs/architecture.md) |
-| **Tenancy and isolation** (compute/data/secrets/net/IAM) | [04-system-design.md](./docs/04-system-design.md), [`foundation/tenants/`](./fleet-managers/terraform/foundation/tenants/) |
-| **Observability and cost** — per-app attribution, **LLM token costs as a first-class signal**, **tracing across the agent/tool-call chain** | [09-llm-observability.md](./docs/09-llm-observability.md) + [`mcp-server/`](./mcp-server/) (the reference implementation) + [cost-and-observability.md](./docs/cost-and-observability.md) |
-| **Guardrails** — prompt injection, PII, model allowlists, HITL, audit | [10-prompt-injection-and-pii.md](./docs/10-prompt-injection-and-pii.md) + [guardrails.md](./docs/guardrails.md) |
-| **Lifecycle** — provisioning, updates, secret rotation, retirement | [07-rollout.md](./docs/07-rollout.md) (Ring 3 owns rotation + retirement) |
-| **Ownership** — AI Infra vs DevOps | [08-ownership.md](./docs/08-ownership.md) — explicit boundary + three interface contracts |
-| **Tradeoffs** — real decisions with reasoning | [06-tradeoffs.md](./docs/06-tradeoffs.md) — EKS vs App Runner, in-proc orchestrator vs Step Functions, public ALB vs internal-only, 1-level FQDN vs per-tenant |
-| **Rollout shape** — what ships first / manual / unlocks 10x | [07-rollout.md](./docs/07-rollout.md) — three rings |
-
-Plus the product-track docs that frame the platform:
-
-| File | What it covers |
-| --- | --- |
-| [01-user-stories.md](./docs/01-user-stories.md) | 5 personas, 17 stories |
-| [02-use-cases.md](./docs/02-use-cases.md) | 12 use cases, sequence diagrams |
-| [03-qualification.md](./docs/03-qualification.md) | Honest scorecard — what's done, what's not yet |
-| [05-onboarding-walkthrough.md](./docs/05-onboarding-walkthrough.md) | Click-by-click flow at portal.ssp.mightybee.dev |
+| [docs/deliverable1-01-architecture.md](./docs/deliverable1-01-architecture.md) | Target architecture + Tenancy & isolation |
+| [docs/deliverable1-02-observability-and-cost.md](./docs/deliverable1-02-observability-and-cost.md) | Observability & cost — LLM token cost as first-class signal + tracing across the agent / tool-call chain |
+| [docs/deliverable1-03-guardrails.md](./docs/deliverable1-03-guardrails.md) | Guardrails — prompt injection, PII, model allowlists, HITL, audit |
+| [docs/deliverable1-04-lifecycle-and-ownership.md](./docs/deliverable1-04-lifecycle-and-ownership.md) | Lifecycle + Ownership boundary + Rollout shape |
+| [docs/deliverable1-05-tradeoffs.md](./docs/deliverable1-05-tradeoffs.md) | Tradeoffs — four real decisions with reasoning + cost |
 
 ## Code slices
 
