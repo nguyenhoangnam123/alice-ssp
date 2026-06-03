@@ -191,8 +191,9 @@ flowchart LR
 ### Ring 1 — what ships first (live today)
 
 - One tenant (`alice`) with namespace + NetworkPolicy + ResourceQuota + IRSA.
-- CR workflow end-to-end: submit → policy gate → **budget guard** → AI → PR →
-  merge → reconcile.
+- CR workflow end-to-end: submit → policy gate (incl. injection +
+  PII scanners) → **budget guard** → AI (with `<tenant_input>` isolation) →
+  **output YAML re-validation** → PR → merge → reconcile.
 - Wildcard `*.ssp.mightybee.dev` cert via ACM; ExternalDNS publishes A
   records.
 - AWS Budgets per cost-center with email alerts.
@@ -201,6 +202,11 @@ flowchart LR
 - MCP observability slice: spans, `record_llm_call`, `check_budget`,
   `log_guarded_action` — used in library mode by the portal and stdio
   mode by tenant apps.
+- Prompt-injection defences (layers 1, 3, 4): regex scanner on
+  description, `<tenant_input>` isolation in the AI prompt, deterministic
+  re-parse of the generated `values.yaml` + `argocd.yaml` before PR open.
+- PII regex pre-filter on description (layer A): email, IPv4, AWS access
+  key, JWT, US SSN, credit card (Luhn-validated). Redacted in audit log.
 - **Chat service** at `chat.ssp.mightybee.dev` — Cognito-gated, every
   message routes through `meteredBedrockInvoke`; live demo of the
   cost guardrail.

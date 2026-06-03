@@ -143,21 +143,28 @@ sequenceDiagram
     participant K as EKS
     U->>P: POST /api/services (CR)
     P->>P: Zod + RBAC + insert CR
-    P->>Pol: deterministic checks
-    alt gate fails
-        P->>P: cr=policy_gate_rejected, rev.existence='rejected'
+    P->>Pol: deterministic checks + injection scan + PII scan
+    alt gate fails (rules / injection / PII)
+        P->>P: cr=policy_gate_rejected, rev.existence='rejected'<br/>(audit detail REDACTED for PII / injection rules)
     else
-        P->>Bed: InvokeModel(system prompt cached)
+        P->>P: checkBudget(tenant) — refuse if at cap
+        P->>Bed: InvokeModel (user text wrapped in <tenant_input>)
         alt AI rejects
             Bed-->>P: ```reject (reason)```
             P->>P: cr=ai_validation_rejected, rev.existence='rejected'
         else AI approves
             Bed-->>P: dockerfile / ci / helm / argocd blocks
-            P->>Gh: createTree + createPR
-            Gh-->>P: PR URL
+            P->>P: re-parse YAML — assert no privileged / hostNetwork /<br/>hostPath / runAsUser=0; ArgoCD finalizer + tenant-ns
+            alt output violates
+                P->>P: cr=ai_validation_rejected, rev.existence='rejected'
+            else clean
+                P->>Gh: createTree + createPR
+                Gh-->>P: PR URL
+            end
             P->>P: cr=platform_reviewing, rev.existence='created', route_host set
             P-->>U: timeline UI updates within seconds
             PE->>Gh: review + merge
+            end
             Gh->>P: PR-merge webhook (HMAC)
             P->>P: cr=applied, rev.cr_status=applied
             Arg->>Gh: poll main

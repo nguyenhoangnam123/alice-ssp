@@ -45,6 +45,12 @@ llm_calls` → CW EMF emit → span close. Drop `tenants.bedrock_monthly_cap_usd
 to `0.01` and the next send returns HTTP 402 with the platform's refusal
 reason; Bedrock is never called.
 
+The CR-creation guardrails are exercised by `tests/fuzz-guardrails.sh` —
+12 adversarial CRs (prompt-injection variants + PII variants + an
+output-YAML-violating valid description) submitted in sequence; the
+script prints what each one rejected on and shows the redacted audit
+detail. See `tests/fuzz-guardrails.md` for expected outcomes.
+
 ## Read first — Deliverable 1 (Design Doc)
 
 Five files, mapped 1:1 to the spec's eight Deliverable-1 sections.
