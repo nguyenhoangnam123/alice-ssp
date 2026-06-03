@@ -37,6 +37,54 @@ data "aws_iam_policy_document" "portal" {
       "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:application-inference-profile/*",
     ]
   }
+
+  # Per-service secrets management. The portal mediates writes on behalf of
+  # tenants (no direct cloud creds in tenant pods). Scoped to the ssp/* prefix
+  # so a compromised portal can't touch unrelated account secrets.
+  statement {
+    effect = "Allow"
+    actions = [
+      "secretsmanager:CreateSecret",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:PutSecretValue",
+      "secretsmanager:UpdateSecret",
+      "secretsmanager:DeleteSecret",
+      "secretsmanager:TagResource",
+    ]
+    resources = [
+      "arn:aws:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:ssp/*",
+    ]
+  }
+
+  # ListSecrets has to be * (no resource-level scoping in IAM for the list
+  # action). The portal filters results client-side to ssp/<tenant>/* paths.
+  statement {
+    effect    = "Allow"
+    actions   = ["secretsmanager:ListSecrets"]
+    resources = ["*"]
+  }
+
+  # CMK that ssp/* secrets are encrypted under. Without this the portal can't
+  # decrypt during GetSecretValue or encrypt during Put.
+  statement {
+    effect = "Allow"
+    actions = [
+      "kms:Decrypt",
+      "kms:Encrypt",
+      "kms:GenerateDataKey",
+      "kms:DescribeKey",
+    ]
+    resources = [
+      "arn:aws:kms:*:${data.aws_caller_identity.current.account_id}:alias/ssp-platform-secrets",
+      "arn:aws:kms:*:${data.aws_caller_identity.current.account_id}:key/*",
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["secretsmanager.${data.aws_caller_identity.current.id != "" ? "*" : "eu-west-1"}.amazonaws.com"]
+    }
+  }
 }
 
 data "aws_caller_identity" "current" {}

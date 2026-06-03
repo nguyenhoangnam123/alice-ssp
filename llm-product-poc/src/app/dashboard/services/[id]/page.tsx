@@ -16,6 +16,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { CrModal } from "@/components/cr-modal";
 import { RevisionsTimeline } from "@/components/revisions-timeline";
 import { UsageWidget } from "@/components/usage-widget";
+import { SecretsForm } from "@/components/secrets-form";
 
 export const dynamic = "force-dynamic";
 
@@ -187,6 +188,8 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
         callsThisMonth={usage.callsThisMonth}
         recentCalls={usage.recentCalls}
       />
+
+      <SecretsForm serviceId={svc.id} />
 
       <div>
         <h2 className="text-lg mb-2">Revisions</h2>
