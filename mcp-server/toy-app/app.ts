@@ -43,7 +43,7 @@ async function main() {
     name: "orch.process_change_request",
     attributes: { tenant_id: tenantId, cr_id: traceId },
   });
-  const rootSpanId = JSON.parse(root.content[0].text).span_id;
+  const rootSpanId = JSON.parse((root.content as Array<{ text: string }>)[0].text).span_id;
 
   // 2. Nested span — Bedrock invocation.
   const aiSpan = await call(client, "start_span", {
@@ -52,7 +52,7 @@ async function main() {
     name: "orch.ai_invoke.bedrock_call",
     attributes: { model: "eu.anthropic.claude-opus-4-6-v1" },
   });
-  const aiSpanId = JSON.parse(aiSpan.content[0].text).span_id;
+  const aiSpanId = JSON.parse((aiSpan.content as Array<{ text: string }>)[0].text).span_id;
 
   // 3. Record the token usage. Simulating a typical CR-generation call.
   const llmResult = await call(client, "record_llm_call", {
@@ -65,7 +65,7 @@ async function main() {
     cache_write_tokens: 0,
     latency_ms: 11200,
   });
-  const cost = JSON.parse(llmResult.content[0].text).cost_usd;
+  const cost = JSON.parse((llmResult.content as Array<{ text: string }>)[0].text).cost_usd;
 
   await call(client, "end_span", {
     span_id: aiSpanId,

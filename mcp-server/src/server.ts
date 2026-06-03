@@ -117,6 +117,13 @@ const recordLlmCallInput = z.object({
   latency_ms: z.number().nonnegative().optional(),
 });
 
+const checkBudgetInput = z.object({
+  tenant_id: z
+    .string()
+    .min(1)
+    .describe("Tenant whose Bedrock monthly cap to check before invoking the model. Returns { ok, spent_usd, cap_usd, remaining_usd }."),
+});
+
 const logGuardedActionInput = z.object({
   tenant_id: z.string().min(1),
   actor_user_id: z.string().min(1).describe("User who attempted the action."),
@@ -151,9 +158,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: zodToJsonSchema(endSpanInput),
     },
     {
+      name: "check_budget",
+      description:
+        "Pre-flight cost guardrail. Call before invoking Bedrock; the platform returns whether the tenant has Bedrock budget remaining this calendar month. Honour the {ok:false} result by refusing to invoke — the tenant has already been over-cap warned and another call will not bill, only debit your audit log.",
+      inputSchema: zodToJsonSchema(checkBudgetInput),
+    },
+    {
       name: "record_llm_call",
       description:
-        "Record one LLM invocation: token usage, model, computed USD cost. The platform aggregates these per tenant/model for budgets and dashboards.",
+        "Record one LLM invocation: token usage, model, computed USD cost. The platform aggregates these per tenant/model for budgets and dashboards. Also POSTs to the portal's internal API so the next check_budget reflects this call (best-effort; falls back to EMF-only if the API is unreachable).",
       inputSchema: zodToJsonSchema(recordLlmCallInput),
     },
     {
@@ -234,6 +247,28 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         };
       }
 
+      case "check_budget": {
+        const args = checkBudgetInput.parse(req.params.arguments);
+        const portalRes = await callPortal(
+          `/api/internal/budget/${encodeURIComponent(args.tenant_id)}`,
+          "GET",
+        );
+        if (!portalRes.ok) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text: `portal budget endpoint failed: ${portalRes.error}`,
+              },
+            ],
+          };
+        }
+        return {
+          content: [{ type: "text", text: JSON.stringify(portalRes.body) }],
+        };
+      }
+
       case "record_llm_call": {
         const args = recordLlmCallInput.parse(req.params.arguments);
         const costUsd = computeCostUSD(args.model, {
@@ -253,6 +288,27 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
             ],
           };
         }
+        // Best-effort POST to the portal so checkBudget reflects this call.
+        // If the API is unreachable we still emit the EMF event — the platform's
+        // CW-based aggregation catches it within ~1min.
+        callPortal("/api/internal/llm-calls", "POST", {
+          tenant_id: args.tenant_id,
+          change_request_id: args.cr_id,
+          model: args.model,
+          input_tokens: args.input_tokens,
+          output_tokens: args.output_tokens,
+          cache_read_tokens: args.cache_read_tokens ?? 0,
+          cache_write_tokens: args.cache_write_tokens ?? 0,
+          latency_ms: args.latency_ms,
+        }).catch((err) => {
+          process.stderr.write(
+            JSON.stringify({
+              service: "ssp",
+              event: "mcp_portal_post_failed",
+              detail: err instanceof Error ? err.message : String(err),
+            }) + "\n",
+          );
+        });
         emit({
           _aws: {
             CloudWatchMetrics: [
@@ -334,6 +390,61 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     };
   }
 });
+
+// ---------------------------------------------------------------------------
+// Portal HTTP client — used by check_budget + record_llm_call to talk to the
+// platform's internal API. Auth is a shared bearer token mounted via ESO into
+// the tenant pod. Both URL and token come from env so the MCP server doesn't
+// hardcode anything.
+// ---------------------------------------------------------------------------
+type PortalResult =
+  | { ok: true; body: any }
+  | { ok: false; error: string; status?: number };
+
+async function callPortal(
+  path: string,
+  method: "GET" | "POST",
+  body?: any,
+): Promise<PortalResult> {
+  const base = process.env.SSP_PORTAL_API;
+  const token = process.env.SSP_INTERNAL_TOKEN;
+  if (!base) return { ok: false, error: "SSP_PORTAL_API env not set" };
+  if (!token) return { ok: false, error: "SSP_INTERNAL_TOKEN env not set" };
+  const url = base.replace(/\/$/, "") + path;
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(body ? { "content-type": "application/json" } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await res.text();
+    let parsed: any = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      // body wasn't JSON; expose raw text on error path
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        error:
+          parsed?.error ??
+          parsed?.detail ??
+          `http ${res.status}: ${text.slice(0, 200)}`,
+      };
+    }
+    return { ok: true, body: parsed };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
 
 // ---------------------------------------------------------------------------
 // JSON-Schema conversion (zod → MCP). MCP expects raw JSON Schema; we keep a

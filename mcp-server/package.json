@@ -11,7 +11,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
-    "toy": "tsx toy-app/app.ts"
+    "toy": "tsx toy-app/app.ts",
+    "tenant": "tsx toy-app/tenant-app.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",

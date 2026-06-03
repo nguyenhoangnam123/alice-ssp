@@ -67,6 +67,8 @@ envFrom:
       name: portal-github
   - secretRef:
       name: portal-github-webhook
+  - secretRef:
+      name: portal-internal-token
 
 env:
   - name: AUTH_MODE

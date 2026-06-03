@@ -6,8 +6,9 @@ the platform. Three tools:
 | Tool | What it does | Closes spec gap |
 | --- | --- | --- |
 | `start_span` / `end_span` | Open + close a trace span. Spans nest via `parent_span_id`. | "Tracing across the agent / tool-call chain" |
-| `record_llm_call` | Record one Bedrock invocation: model, tokens, computed USD cost, latency. | "LLM token costs as a first-class signal" |
-| `log_guarded_action` | Append-only audit log for sensitive operations (PII block, allowlist refusal, prompt-injection detection). | "Audit trail" + the guarded-action half of "Guardrails" |
+| `check_budget` | Pre-flight: ask the portal whether the tenant has Bedrock budget left this month. Returns `{ok, spent_usd, cap_usd, remaining_usd}`. **Honour `ok=false` by refusing to invoke Bedrock — the platform has already over-cap warned.** | The per-tenant cost guardrail. |
+| `record_llm_call` | Record one Bedrock invocation: model, tokens, computed USD cost, latency. Also POSTs to the portal's internal API so the next `check_budget` reflects this call. | "LLM token costs as a first-class signal" |
+| `log_guarded_action` | Append-only audit log for sensitive operations (PII block, allowlist refusal, self-refusal-over-budget). | "Audit trail" + the guarded-action half of "Guardrails" |
 
 ## Why this shape
 
@@ -42,16 +43,77 @@ mcp-server/
 └── README.md
 ```
 
-## Run the toy app
+## Two integration paths
+
+### 1. The SSP portal (orchestrator) — library mode
+
+The portal speaks the MCP schema in-process via
+`llm-product-poc/src/lib/observability/`. Same `pricing.ts`, same EMF
+emission format, same `check_budget` semantics. No IPC because the portal
+owns its trace IDs. The portal's `meteredBedrockInvoke()` is the production
+implementation: wraps Bedrock with span open/close + DB insert + EMF emit.
+
+### 2. A vibe-coded tenant app — stdio mode
+
+A vibe-coded app spawned in a tenant namespace runs this MCP server as a
+sidecar (or stdio child) and consumes the three tools to inherit the
+platform's guardrails:
+
+```
+tenant_app                  mcp-server (this)              portal
+    │                            │                            │
+    │── check_budget(tenant) ───▶│                            │
+    │                            │── GET /budget/<id> ───────▶│
+    │                            │◀── {ok, spent, cap} ───────│
+    │◀── {ok:false} ─────────────│                            │
+    │  (refuse to invoke)        │                            │
+    │── (Bedrock invoke skipped) │                            │
+    │── log_guarded_action(...) ▶│                            │
+    │                            │ emit EMF to CloudWatch     │
+```
+
+If `ok=true` the app calls Bedrock with its own IRSA role, then:
+
+```
+    │── record_llm_call(usage) ─▶│
+    │                            │── POST /llm-calls ────────▶│
+    │                            │── emit EMF event ─────────▶ CW
+```
+
+The contract is **trust-based** for MVP1 — the app could bypass MCP and
+call Bedrock directly. Ring 3 adds an in-cluster Bedrock proxy + NetworkPolicy
+that forces all egress through the proxy, making the contract enforced.
+
+Env the tenant app must set when spawning this server:
+
+| Env | Required | Notes |
+| --- | --- | --- |
+| `SSP_PORTAL_API` | yes | e.g. `https://portal.ssp.mightybee.dev` |
+| `SSP_INTERNAL_TOKEN` | yes | Mounted by ESO from `ssp/<tenant>/api-token`. |
+| `SSP_OBSERVABILITY_DISABLED` | no | If `true`, MCP runs silently — useful for unit tests. |
+
+## Run the toy apps
 
 ```sh
 cd mcp-server
 npm install
+
+# 1) original toy — pretends to be the SSP orchestrator: opens spans, records
+#    an LLM call with the EMF format, logs a PII-block guarded action.
 npm run toy
+
+# 2) tenant toy — pretends to be a vibe-coded tenant app: check_budget first,
+#    invoke (simulated) Bedrock, record_llm_call. Reach a live portal:
+SSP_PORTAL_API=https://portal.ssp.mightybee.dev \
+  SSP_INTERNAL_TOKEN=$(aws secretsmanager get-secret-value \
+    --secret-id ssp/portal/internal-token --query SecretString --output text --profile alice \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])') \
+  SSP_TENANT_ID=cbdbfcd6373448318d82ddc58d \
+  npm run tenant
 ```
 
-You'll see JSON lines on stdout — span open/close, llm_call with computed
-cost, and the guarded_action. The script ends with a printed summary on
+You'll see JSON lines on stderr — span open/close, llm_call with computed
+cost, and the guarded_action. Each script ends with a printed summary on
 stderr (so it doesn't pollute the metric stream).
 
 Sample output (truncated):
