@@ -59,8 +59,10 @@ export function SecretsForm({ serviceId }: { serviceId: string }) {
         setError(body.detail ?? `HTTP ${res.status}`);
         return;
       }
-      const body = (await res.json()) as SecretRow;
-      setJustSet(`Saved ${body.key} (${body.masked}). Value cleared from the input.`);
+      const body = (await res.json()) as { change_request_id: string };
+      setJustSet(
+        `Submitted CR ${body.change_request_id}. Value staged in AWS Secrets Manager; pending platform approval. Value cleared from the input.`,
+      );
       setKey("");
       setValue("");
       void refresh();
@@ -72,19 +74,22 @@ export function SecretsForm({ serviceId }: { serviceId: string }) {
   }
 
   async function remove(k: string) {
-    if (!confirm(`Delete secret ${k}? Tenant pods consuming it will need a restart.`)) return;
+    if (!confirm(`Submit a CR to delete secret ${k}? It still needs platform approval.`)) return;
     setBusy(true);
     setError(null);
     try {
       const res = await fetch(`/api/services/${serviceId}/secrets/${encodeURIComponent(k)}`, {
         method: "DELETE",
       });
-      if (!res.ok && res.status !== 204) {
+      if (!res.ok && res.status !== 202) {
         const body = await res.text();
         setError(`HTTP ${res.status}: ${body.slice(0, 120)}`);
         return;
       }
-      setJustSet(null);
+      const body = (await res.json().catch(() => ({}))) as { change_request_id?: string };
+      setJustSet(
+        `Submitted delete CR ${body.change_request_id ?? "?"} for ${k}. Pending platform approval.`,
+      );
       void refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -100,9 +105,13 @@ export function SecretsForm({ serviceId }: { serviceId: string }) {
       </h3>
 
       <p className="text-xs text-muted">
-        Mounted into the tenant pod as env vars via External Secrets. Values are
-        write-only from this form — once you save, only the first two chars are
-        shown anywhere.
+        Mounted into the tenant pod as env vars via External Secrets. Each set
+        / delete from this form creates a <strong>change-request</strong> —
+        the AI is bypassed (we never let it see secret values); a platform
+        admin must approve from the CR page before the value is merged into
+        the live bundle. Until approved, the value lives in a pending AWS
+        Secrets Manager path keyed by the CR id, encrypted under the platform
+        KMS CMK.
       </p>
 
       <div>

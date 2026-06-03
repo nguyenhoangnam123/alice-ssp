@@ -1,16 +1,21 @@
 // DELETE /api/services/[id]/secrets/[key]
 //
-// Idempotent — deleting an absent key returns 204 same as deleting a present
-// one. If the last key in the bundle is removed, the entire AWS Secrets
-// Manager secret is dropped (so rebuild on re-add isn't held up by the 7-day
-// recovery window).
+// Creates a SECRET delete change-request. Approval drops the key from the
+// main bundle. Same review path as upsert — admins must approve from the
+// CR detail page.
 
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import { ulid } from "ulid";
 import { db } from "@/lib/db";
-import { services } from "@/lib/db/schema";
+import { services, changeRequests } from "@/lib/db/schema";
 import { requireTenantAdmin, requireUser } from "@/lib/auth/rbac";
-import { deleteKey, SecretValidationError } from "@/lib/secrets/manager";
+import {
+  writePending,
+  validateKey,
+  SecretValidationError,
+} from "@/lib/secrets/manager";
+import { processChangeRequest } from "@/lib/workflow/orchestrator";
 import { emitGuardedAction } from "@/lib/observability";
 import { handleApiError } from "@/lib/api/errors";
 
@@ -32,11 +37,7 @@ export async function DELETE(
     await requireTenantAdmin(svc.tenantId);
 
     try {
-      await deleteKey({
-        tenantId: svc.tenantId,
-        serviceId: svc.id,
-        key,
-      });
+      validateKey(key);
     } catch (err) {
       if (err instanceof SecretValidationError) {
         return NextResponse.json(
@@ -47,15 +48,45 @@ export async function DELETE(
       throw err;
     }
 
+    const crId = ulid();
+    await db.insert(changeRequests).values({
+      id: crId,
+      serviceId: svc.id,
+      requestedBy: user.id,
+      summary: `Delete secret ${key} on ${svc.name}`,
+      payload: { kind: "secret", action: "delete", key },
+      status: "submitted",
+    });
+
+    try {
+      await writePending({
+        tenantId: svc.tenantId,
+        serviceId: svc.id,
+        crId,
+        payload: { action: "delete", key },
+      });
+    } catch (err) {
+      await db.delete(changeRequests).where(eq(changeRequests.id, crId));
+      throw err;
+    }
+
     emitGuardedAction({
       tenantId: svc.tenantId,
       actorUserId: user.id,
-      action: "secret.delete",
+      action: "secret.cr_submitted",
       resource: `service:${svc.id}/secret:${key}`,
       outcome: "allowed",
-      detail: `key ${key} deleted on service ${svc.name}`,
+      detail: `secret-delete CR ${crId} submitted for key ${key}`,
     });
-    return new NextResponse(null, { status: 204 });
+
+    processChangeRequest(crId).catch((err) =>
+      console.error("orchestrator failed on secret CR", err),
+    );
+
+    return NextResponse.json(
+      { id: crId, change_request_id: crId },
+      { status: 202 },
+    );
   } catch (err) {
     return handleApiError(err);
   }

@@ -156,6 +156,141 @@ export async function upsertKey(args: {
   return { key: args.key, masked: maskValue(args.value) };
 }
 
+// ---------------------------------------------------------------------------
+// Pending bundles — the staging area for secret CRs. A submission writes the
+// value here keyed by CR id; approval reads, merges into the main bundle, and
+// deletes the pending entry. Reject just deletes pending. The DB never sees
+// the plaintext value at any step.
+// ---------------------------------------------------------------------------
+
+export function pendingPath(
+  tenantId: string,
+  serviceId: string,
+  crId: string,
+): string {
+  return `ssp/${tenantId}/${serviceId}/secrets-pending/${crId}`;
+}
+
+export type PendingPayload =
+  | { action: "upsert"; key: string; value: string }
+  | { action: "delete"; key: string };
+
+export async function writePending(args: {
+  tenantId: string;
+  serviceId: string;
+  crId: string;
+  payload: PendingPayload;
+}): Promise<void> {
+  if (args.payload.action === "upsert") {
+    validateKey(args.payload.key);
+    validateValue(args.payload.value);
+  } else {
+    validateKey(args.payload.key);
+  }
+  const path = pendingPath(args.tenantId, args.serviceId, args.crId);
+  const body = JSON.stringify(args.payload);
+  try {
+    await client().send(
+      new CreateSecretCommand({
+        Name: path,
+        Description: `Pending secret change for CR ${args.crId} on service ${args.serviceId}`,
+        SecretString: body,
+        KmsKeyId: KMS_KEY_ALIAS,
+        Tags: [
+          { Key: "tenant", Value: args.tenantId },
+          { Key: "service", Value: args.serviceId },
+          { Key: "cr_id", Value: args.crId },
+          { Key: "kind", Value: "secret-pending" },
+          { Key: "managed_by", Value: "ssp-portal" },
+        ],
+      }),
+    );
+  } catch (err) {
+    // Idempotent re-submit during a retry — overwrite the staged value.
+    if ((err as { name?: string })?.name === "ResourceExistsException") {
+      await client().send(
+        new PutSecretValueCommand({ SecretId: path, SecretString: body }),
+      );
+      return;
+    }
+    throw err;
+  }
+}
+
+export async function readPending(
+  tenantId: string,
+  serviceId: string,
+  crId: string,
+): Promise<PendingPayload | null> {
+  try {
+    const res = await client().send(
+      new GetSecretValueCommand({
+        SecretId: pendingPath(tenantId, serviceId, crId),
+      }),
+    );
+    if (!res.SecretString) return null;
+    return JSON.parse(res.SecretString) as PendingPayload;
+  } catch (err) {
+    if (err instanceof ResourceNotFoundException) return null;
+    throw err;
+  }
+}
+
+export async function dropPending(
+  tenantId: string,
+  serviceId: string,
+  crId: string,
+): Promise<void> {
+  try {
+    await client().send(
+      new DeleteSecretCommand({
+        SecretId: pendingPath(tenantId, serviceId, crId),
+        ForceDeleteWithoutRecovery: true,
+      }),
+    );
+  } catch (err) {
+    if (!(err instanceof ResourceNotFoundException)) throw err;
+  }
+}
+
+/**
+ * Apply a pending payload to the main secret bundle. Idempotent on the
+ * pending side — re-applying the same CR is a no-op if pending is already
+ * dropped. Caller owns the CR-status transition.
+ */
+export async function applyPending(args: {
+  tenantId: string;
+  serviceId: string;
+  crId: string;
+}): Promise<
+  | { ok: true; action: "upsert" | "delete"; key: string; masked?: string }
+  | { ok: false; reason: string }
+> {
+  const payload = await readPending(args.tenantId, args.serviceId, args.crId);
+  if (!payload) return { ok: false, reason: "pending payload not found (already applied or rejected)" };
+  if (payload.action === "upsert") {
+    await upsertKey({
+      tenantId: args.tenantId,
+      serviceId: args.serviceId,
+      key: payload.key,
+      value: payload.value,
+    });
+  } else {
+    await deleteKey({
+      tenantId: args.tenantId,
+      serviceId: args.serviceId,
+      key: payload.key,
+    });
+  }
+  await dropPending(args.tenantId, args.serviceId, args.crId);
+  return {
+    ok: true,
+    action: payload.action,
+    key: payload.key,
+    ...(payload.action === "upsert" ? { masked: maskValue(payload.value) } : {}),
+  };
+}
+
 export async function deleteKey(args: {
   tenantId: string;
   serviceId: string;

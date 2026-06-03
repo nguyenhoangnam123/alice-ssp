@@ -72,6 +72,27 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
   const [tenant] = await db.select().from(tenants).where(eq(tenants.id, svc.tenantId)).limit(1);
   if (!tenant) throw new Error(`Tenant ${svc.tenantId} not found`);
 
+  // ---- Secret CRs short-circuit. The value is already in a pending SM path
+  // (written by the secrets API). The AI agent must NEVER see secret values,
+  // so we skip the AI invoke entirely. The CR goes straight to
+  // platform_reviewing; an admin approves via /api/change-requests/<id>/approve
+  // which merges the pending value into the main bundle and transitions to
+  // applied. Reject drops the pending blob and transitions to rejected.
+  if ((cr.payload as Record<string, unknown> | null)?.kind === "secret") {
+    await transition(cr.id, "policy_gate_passed");
+    await transition(cr.id, "platform_reviewing", "awaiting admin approval (secret CR)");
+    await setServiceStatus(svc.id, "platformReview");
+    await upsertRevision({
+      crId: cr.id,
+      svcId: svc.id,
+      svcStatus: "platformReview",
+      crStatus: "platform_reviewing",
+      existenceStatus: "created",
+      aiSummary: `**Step**: Secret change request\n\n**Action**: ${String((cr.payload as Record<string, unknown>).action ?? "?")} of key \`${String((cr.payload as Record<string, unknown>).key ?? "?")}\`\n\n**Status**: pending platform approval. The value is held in AWS Secrets Manager under a pending path keyed by this CR id; it never crosses the AI or this revision row.`,
+    });
+    return { state: "platform_reviewing" };
+  }
+
   // Root span for the whole CR. Trace ID = CR ID so every downstream emit
   // (Bedrock call, prober probe, etc.) joins on a single key.
   const rootSpanId = startSpan({
