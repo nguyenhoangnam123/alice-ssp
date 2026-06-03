@@ -201,10 +201,11 @@ resource "aws_wafv2_web_acl" "public_alb" {
   }
 }
 
-# CloudWatch Log Group for sampled / blocked requests.
+# CloudWatch Log Group for sampled / blocked requests. 1-day retention keeps it
+# inside the CW free tier — bump for incident retros if needed.
 resource "aws_cloudwatch_log_group" "waf" {
   name              = "aws-waf-logs-ssp-shared-public-alb"
-  retention_in_days = 14
+  retention_in_days = 1
 }
 
 resource "aws_wafv2_web_acl_logging_configuration" "public_alb" {

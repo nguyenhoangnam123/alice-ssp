@@ -43,6 +43,13 @@ module "eks" {
   enable_cluster_creator_admin_permissions = true
   cluster_endpoint_public_access           = var.cluster_endpoint_public_access
 
+  # CW free-tier guard. The module's default is to enable all 5 control-plane log types
+  # AND keep them at 90 days — that's how /aws/eks/<cluster>/cluster grew to ~800MB on a
+  # POC. For MVP1 we don't operate the control plane (managed by AWS), so disable all
+  # types upstream. If a future debug session needs api/audit, re-enable temporarily.
+  cluster_enabled_log_types              = []
+  cloudwatch_log_group_retention_in_days = 1
+
   cluster_addons = {
     coredns                = {}
     kube-proxy             = {}
