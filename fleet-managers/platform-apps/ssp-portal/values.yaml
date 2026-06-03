@@ -5,7 +5,7 @@ image:
   repository: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal
   # Pinned to the commit SHA produced by the build-portal workflow. Bumping this is the
   # single source of truth for "deploy this new portal version" — ArgoCD reconciles it.
-  tag: "5a66952bd920e78bac4c5a1a08110215b1ce0685"
+  tag: "82d9ec2fbfc8651fa0095b81e4231f1801ae952d"
   pullPolicy: IfNotPresent
 
 replicaCount: 1
