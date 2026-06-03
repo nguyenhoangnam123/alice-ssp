@@ -300,6 +300,151 @@ Ranked by signal (LLM observability + budget guard already shipped in Ring
 7. Multi-region — same chart, fleet repo grows a `regions/` axis.
 8. Drift surfaces — wire ArgoCD `app diff` results into a per-tenant feed.
 
+### Wishlist — what I'd build with more time
+
+What follows is the honest "given another week (or month) of focused work,
+here's what I'd add." Some items overlap with the Ring-2/3 lists above; the
+intent here is a complete reviewer-friendly inventory of known gaps and
+investments, grouped by theme. **None of this is in the live deployment
+today.**
+
+#### 1. Alerting & observability
+
+- **System-wide CloudWatch alarms + SNS routing per severity**
+  - P0 (cluster-wide outage, ALB 5xx > 5%, EKS control plane unreachable)
+    → PagerDuty + Slack incident channel
+  - P1 (ArgoCD sync stuck > 30 min, NAT data transfer > 5× baseline,
+    secret rotation failure) → email to on-call
+  - P2 (any `guarded_action` with outcome=blocked, any policy_gate_rejected
+    over a 1h threshold) → audit log, weekly review
+- **Tenant-wide spend alarms** — Bedrock cost / EKS pod usage / NAT data
+  transfer per `cost_center`. Today the AWS Budget alerts at 50/80% are the
+  only signal; a real platform wants rate-of-spend alarms (cents-per-minute,
+  not monthly-projection) plus per-tenant dashboards.
+- **AI budget burn-rate alarms** — 10× spend over baseline in 1h → warn,
+  30× → page. Catches a runaway tenant before the 24h Budget alert.
+- **OpenCost in-cluster + Grafana** — break down shared EKS spend by
+  namespace using the existing K8s labels (ssp.platform/tenant,
+  cost-center, product, department). Visible in the same Grafana the
+  platform team uses for cluster health.
+- **Prometheus + AlertManager** rules tied to the SLOs in
+  `deliverable1-02` (Portal /login 99.5%, ArgoCD sync p95 < 5min,
+  Tenant ALB 5xx < 1%).
+- **Tracing propagation through GHA + ArgoCD** — `cr_id` env var threaded
+  through GitHub Actions workflow steps; `metadata.annotations[ssp.platform/cr-id]`
+  on ArgoCD Applications so cluster events inherit the trace ID. One filter
+  on `cr_id` returns portal spans + Bedrock spans + GHA logs + ArgoCD events.
+- **Drift surface** — `argocd app diff` results piped into a per-tenant
+  feed on the service detail page. Out-of-band kubectl edits get
+  selfHeal-reverted today but produce no audit trail.
+
+#### 2. Per-tenant isolation hardening
+
+- **NetworkPolicies that explicitly deny cross-tenant pod→pod traffic**
+  — today's default-deny is on ingress; add explicit egress rules
+  preventing tenant A's pods from reaching tenant B's Services. Cilium
+  for L7 enforcement (pod-to-pod by SPIFFE identity, not just IP).
+- **Dedicated WAF rules per tenant** — today one Web ACL covers the
+  shared ALB. Add per-hostname rule sets so a noisy tenant can be rate-
+  limited without affecting others. Per-tenant managed-rule subscriptions.
+- **Per-tenant LB choice (internal vs external)** — chart picks via
+  `route.vpnInternal` but both options go through one shared ALB per
+  scheme. Add per-tenant ALB for tenants with regulatory requirements
+  (PCI, HIPAA — they want isolated network paths, not shared with peers).
+- **PodSecurityAdmission `restricted`** — today only NetworkPolicy +
+  ResourceQuota are enforced at the namespace level; PSA `restricted`
+  catches more (`runAsNonRoot`, `readOnlyRootFilesystem`, capabilities
+  dropped) at admission, defense-in-depth with the output validator.
+- **Image scan + sign verification at admission** — Cosign / sigstore
+  policy via Kyverno or kubewarden. Today the AI image allowlist is the
+  only gate; admission-time verification catches a CR that somehow
+  smuggles a non-allowlisted image.
+- **Network-enforced cost guardrail** — Bedrock egress proxy + NetworkPolicy
+  denying direct `bedrock-runtime` egress from tenant namespaces. Forces all
+  Bedrock calls through the proxy where metering and budget enforcement live.
+  Replaces today's trust-based MCP contract.
+
+#### 3. CR complexity & developer surface
+
+- **Karpenter for node autoscale** — replace static managed node group;
+  per-tenant taints + tolerations so a noisy tenant can't starve a peer's
+  pods. Karpenter provisions nodes on-demand sized to the workload, returns
+  them when idle.
+- **HPA (Horizontal Pod Autoscaler)** — AI generates an HPA based on the
+  CR's traffic estimate or a `requests/s` field in the form. Today
+  replicaCount is static.
+- **PodDisruptionBudget** — for multi-replica services, AI generates a
+  PDB so cluster maintenance doesn't take the service below quorum.
+- **PVC support** — chart template + AI prompt awareness + per-tenant EBS
+  volume defaults (size, IOPS, throughput, retention). Today nothing in
+  the chart speaks to storage.
+- **Multi-container apps** — sidecars (observability, proxies, init); the
+  AI prompt currently enforces single-container. Open up for services that
+  legitimately need init containers (DB migrations, asset compilation) or
+  sidecars (proxies, log shippers).
+- **Source-path field on services** (`services.source_path`) — the chat
+  Dockerfile gap surfaced this: monorepo'd services need the AI to know
+  *where in the repo* to build from. Today the AI assumes flat layout.
+- **Decommission CR** — opens a PR that deletes the fleet files; on merge
+  ArgoCD prunes K8s resources via the resources-finalizer; portal sets
+  `services.deletedAt`; SM secrets dropped; IRSA role removed.
+- **Auto-merge for low-risk CRs** — replicaCount 1-4, no image change,
+  AI confidence above threshold → auto-merge after 5-min cool-off
+  window. Drops human-gate latency from hours to minutes for trivial
+  changes.
+
+#### 4. Lifecycle automation
+
+- **Step Functions orchestrator** — replace the in-process workflow.
+  Durable retries, fan-out (process multiple CRs in parallel),
+  visualizable execution graphs, no orchestrator state lost on portal
+  restart. Unblocks portal HA.
+- **Secret rotation Lambdas** — RDS master via Secrets Manager native
+  rotation (30-day); GitHub PAT via fine-grained-PAT rotation API;
+  webhook HMAC quarterly with overlap window.
+- **Per-call Bedrock rate-limit** — concurrent CRs from the same tenant
+  can each pass `checkBudget` and collectively push over cap. Add a
+  Postgres advisory lock or Redis token bucket per tenant.
+- **Per-tenant JWT auth** on `/api/internal/*` — replace shared bearer
+  token with short-lived per-tenant JWTs. A leaked tenant token can't be
+  used against another tenant's data.
+
+#### 5. AI / safety hardening
+
+- **Bedrock Guardrails** — server-side denied topics + PROMPT_ATTACK +
+  PII filters. One Terraform resource + one invoke parameter. Defence-
+  in-depth on the policy-gate scanners.
+- **AWS Comprehend `DetectPiiEntities`** — authoritative scan in Layer A
+  of PII handling (the regex pre-filter is the triage; Comprehend is the
+  truth). ~$0.0001 / 100 chars.
+- **Chat as a real tenant image (Option B from the build)** — separate
+  chat image that calls `/api/internal/cognito/login` and
+  `/api/internal/chat/message` instead of holding portal secrets. Removes
+  the privilege concern surfaced when chat-as-fat-image was the
+  expedient demo.
+- **Output-validator-targeted CR adversarial tests** — today the fuzz
+  harness only exercises layers 1 + A. Add cases that talk the AI into
+  emitting bad YAML (privileged: true, hostNetwork) and assert layer 4
+  catches them.
+
+#### 6. Architecture
+
+- **Desired-state controller flip** — `services.desired_spec`
+  authoritative; deterministic renderer emits git artifacts; ArgoCD
+  reconciles git → cluster; observed-state polls back. See
+  [deliverable1-01 § Desired-state controller (target architecture)](./deliverable1-01-architecture.md#desired-state-controller-target-architecture).
+- **HA portal + HA prober** — single replica today is fine for one
+  tenant; not for fifty. Prober becomes a CronJob / Argo Events
+  workflow; portal Deployment goes to replicas=2 with leader election
+  for the orchestrator.
+- **Multi-AZ database** — RDS instance is single-AZ; multi-AZ for prod
+  workloads.
+- **Multi-region** — same chart, fleet repo grows a `regions/` axis;
+  ArgoCD per region; cross-region failover via Route53 health checks.
+- **Service mesh evaluation** — Istio or Linkerd for L7 observability +
+  mTLS between tenants. MVP1 explicitly chose not to ship a mesh
+  (NetworkPolicy + IRSA was sufficient surface); revisit at ~50 services.
+
 ### Explicitly NOT in Ring 1
 
 - No multi-AZ database.

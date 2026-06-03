@@ -145,6 +145,20 @@ Option C (guardrails middleware) lives partially in
 | Public ALB + WAF instead of internal-only | Eval reviewer needs a clickable URL; internal-only would have added 1–2h for a private hosted zone + Client VPN with no architectural signal. The shape is the same — flip `scheme=internet-facing` to `scheme=internal` on the LBC `LoadBalancerConfiguration` and re-issue the cert in a private zone. |
 | Built more than the 3–4h budget | The portal had to exist for the MCP server's contract to be honest. I optimised for code that's **actually runnable end-to-end** at the cost of personal time. Spec says "judgment over polish, volume of code is not a signal" — I've taken that seriously where it counts (the docs are tight, opinionated, file-referenced) and accepted the over-build only where it made the architecture concrete. |
 
+## Wishlist (with more time)
+
+[`docs/deliverable1-04-lifecycle-and-ownership.md` § "Wishlist — what I'd
+build with more time"](./docs/deliverable1-04-lifecycle-and-ownership.md#wishlist--what-id-build-with-more-time)
+is the comprehensive inventory of known gaps + investments, organized by
+theme:
+
+1. **Alerting & observability** — system-wide CW alarms + SNS routing, tenant-wide spend alarms, AI burn-rate alarms, OpenCost + Grafana, Prometheus + AlertManager, GHA + ArgoCD trace propagation, ArgoCD drift surface
+2. **Per-tenant isolation hardening** — NetworkPolicies denying cross-tenant pod→pod, per-tenant WAF rule sets, per-tenant LB choice (internal vs external), PodSecurityAdmission `restricted`, image scan + sign verification, network-enforced cost guardrail (egress proxy)
+3. **CR complexity & developer surface** — Karpenter node autoscale, HPA, PodDisruptionBudget, PVC support, multi-container apps, `services.source_path` for monorepo services, decommission CR, auto-merge for low-risk
+4. **Lifecycle automation** — Step Functions orchestrator, secret rotation Lambdas, per-call Bedrock rate-limit, per-tenant JWT
+5. **AI / safety hardening** — Bedrock Guardrails, AWS Comprehend PII, chat-as-real-tenant-image (Option B), output-validator-targeted fuzz
+6. **Architecture** — desired-state controller flip, HA portal + HA prober, multi-AZ DB, multi-region, service mesh evaluation
+
 ## What I'd do next given another full day
 
 In priority order (LLM observability, budget guard, MCP wiring, chat —
