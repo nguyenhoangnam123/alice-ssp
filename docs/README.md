@@ -16,6 +16,17 @@ review surface and the cost team clean per-tenant attribution.
 
 ## Documentation map
 
+**Product / requirements track**
+
+| File | Read when |
+| --- | --- |
+| [01-user-stories.md](./01-user-stories.md) | You want to know who the portal is for and what each persona needs. Five personas, 17 stories. |
+| [02-use-cases.md](./02-use-cases.md) | You want feature-by-feature breakdown with sequence diagrams. Each use case links to the user stories it closes. |
+| [03-qualification.md](./03-qualification.md) | You want an honest read of where the platform is strong (automation, security) and where the gaps are (HA, image scanning, idle cleanup). Done vs not-yet for each quality. |
+| [04-system-design.md](./04-system-design.md) | You want the AWS + GitHub topology, Terraform module layout, tag schema, and end-to-end CR sequence in one place. |
+
+**Engineering deep-dive**
+
 | File | Read when |
 | --- | --- |
 | [architecture.md](./architecture.md) | You want to know what runs where and who owns it. Five Mermaid diagrams. |
