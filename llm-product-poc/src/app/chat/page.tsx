@@ -42,10 +42,10 @@ export default async function ChatPage() {
         </form>
       </header>
       <p className="text-muted text-sm">
-        Every message routes through Bedrock Claude Haiku 4.5 via the
-        platform&apos;s metered invoke wrapper. Spend counts against the tenant&apos;s
-        monthly cap — when the cap is hit, sends return a guarded-action
-        refusal instead of a Bedrock call.
+        Every message routes through Bedrock via the platform&apos;s metered
+        invoke wrapper. Spend counts against the tenant&apos;s monthly cap —
+        when the cap is hit, sends return a guarded-action refusal instead
+        of a Bedrock call.
       </p>
       <ChatBox userSub={sub} />
     </section>

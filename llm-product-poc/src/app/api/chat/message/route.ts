@@ -123,7 +123,13 @@ export async function POST(req: NextRequest) {
       content: [{ type: "text", text: m.text }],
     }));
 
-  const model = "eu.anthropic.claude-haiku-4-5-v1";
+  // Reuses the orchestrator's confirmed-working cross-region inference profile.
+  // Override via BEDROCK_CHAT_MODEL env once we sanity-check a cheaper model
+  // (Haiku) against this account's enabled profile list.
+  const model =
+    process.env.BEDROCK_CHAT_MODEL ??
+    process.env.BEDROCK_MODEL_ID ??
+    "eu.anthropic.claude-opus-4-6-v1";
   const reqBody = {
     anthropic_version: "bedrock-2023-05-31",
     max_tokens: 1024,
