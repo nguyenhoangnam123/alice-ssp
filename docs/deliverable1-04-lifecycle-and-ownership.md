@@ -210,9 +210,25 @@ flowchart LR
 - **Chat service** at `chat.ssp.mightybee.dev` — Cognito-gated, every
   message routes through `meteredBedrockInvoke`; live demo of the
   cost guardrail.
+- **CR-mediated secret management** — `payload.kind=secret` CRs stage
+  the value in an AWS Secrets Manager pending path, bypass the AI
+  entirely, await admin approval on the CR detail page. Same review
+  rails as every other change.
+- **Unified Request-changes modal** — single entry point for every
+  tenant-proposed change. Three vertical sections (static configs,
+  non-sensitive env vars, sensitive secrets); one submit creates the
+  appropriate mix of AI-routed + secret CRs.
+- **Tabbed service detail page** — Versions / AI settings / MCP audit
+  logs. The audit tab merges `llm_calls` + persisted
+  `guarded_actions` events, ordered by time.
+- **Desired-spec shadow column** (`services.desired_spec`) — populated
+  on every CR → applied; rendered on AI settings tab. Foundation for
+  the Ring-3 controller flip.
 - Service-detail usage widget — per-tenant Bedrock spend, cap, recent
   MCP-recorded calls.
-- Audit trail (`status_history` JSONB) on every CR.
+- Audit trail — `status_history` JSONB on every CR; `guarded_actions`
+  table persists every policy/budget/AI/PII/injection rejection +
+  secret-CR step.
 
 ### What stays manual at launch
 

@@ -45,6 +45,19 @@ llm_calls` → CW EMF emit → span close. Drop `tenants.bedrock_monthly_cap_usd
 to `0.01` and the next send returns HTTP 402 with the platform's refusal
 reason; Bedrock is never called.
 
+### What you'll see in the UI
+
+- **Service detail page** is tabbed: Versions (revisions + CRs) / AI settings
+  (Bedrock usage widget + Desired spec panel + read-only secret keys) / MCP
+  audit logs (merged `llm_calls` + `guarded_actions` events, redaction
+  intact).
+- **"Request changes"** button (top of the page) is the *single* entry point
+  for every tenant-proposed change. Three vertical sections: static configs
+  (replicas / memory / cpu with unit selectors), non-sensitive env vars,
+  sensitive env vars. One submit creates one AI-routed CR + N secret CRs.
+- Secret CRs land in `platform_reviewing` with **Approve / Reject** buttons
+  on the CR detail page; AI is bypassed (the model never sees secret values).
+
 The CR-creation guardrails are exercised by `tests/fuzz-guardrails.sh` —
 12 adversarial CRs (prompt-injection variants + PII variants + an
 output-YAML-violating valid description) submitted in sequence; the
@@ -52,6 +65,46 @@ script prints what each one rejected on and shows the redacted audit
 detail. See `tests/fuzz-guardrails.md` for the expected outcomes and
 `tests/fuzz-guardrails-results.md` for a recorded run (Bedrock spend
 $0.134 — zero from the 11 cases that hit the cheap layers).
+
+## Spec compliance at a glance
+
+Every numbered item below is a line in the assignment spec. The "where" column
+points at the file(s) that satisfy it. **Status:** ✅ = in code + live, ◐ =
+in code but partial / unenforced at network layer, 📝 = design doc only.
+
+### Deliverable 1 — Design doc
+
+| Spec asks | Status | Where |
+| --- | --- | --- |
+| Target architecture, end-to-end path | ✅ | [`docs/deliverable1-01-architecture.md`](./docs/deliverable1-01-architecture.md) — flow diagram + AWS topology + GitHub topology + sequence + Desired-state controller (target) |
+| Tenancy & isolation (compute / data / secrets / net / IAM) | ✅ | `docs/deliverable1-01-architecture.md` § Tenancy + [`fleet-managers/terraform/foundation/tenants/`](./fleet-managers/terraform/foundation/tenants/) |
+| Observability — per-app & per-user attribution | ✅ | `docs/deliverable1-02-observability-and-cost.md` + the MCP `record_llm_call` flow + `guarded_actions` table |
+| **LLM token costs as a first-class signal** | ✅ | `llm_calls` table, `checkBudget()`, AWS Budgets per cost-center, EMF metrics on stderr; per-tenant cap refuses BEFORE Bedrock is invoked |
+| **Tracing across the agent / tool-call chain** | ✅ | `lib/observability/tracing.ts` — root span per CR, nested spans, parent_span_id chain; trace_id = cr_id |
+| Guardrails — prompt injection, PII, model allowlists, HITL, audit | ✅ | `docs/deliverable1-03-guardrails.md` — 7 layers, all in code (layers 1, 1b, 3, 4, A); fuzz harness in [`tests/`](./tests/) |
+| Lifecycle — provisioning, updates, **secret rotation, retirement** | ◐ | `docs/deliverable1-04-lifecycle-and-ownership.md`; provisioning + updates live; rotation + retirement designed, not coded |
+| Ownership — AI Infra vs DevOps boundary | ✅ | `docs/deliverable1-04-lifecycle-and-ownership.md` § Ownership boundary + 3 interface contracts |
+| Tradeoffs | ✅ | `docs/deliverable1-05-tradeoffs.md` — 4 real decisions with reasoning + cost |
+| Rollout shape | ✅ | `docs/deliverable1-04-lifecycle-and-ownership.md` § Rollout shape — three rings |
+
+### Deliverable 2 — Code slice (the spec said pick ONE)
+
+| Option | Status | Where |
+| --- | --- | --- |
+| **A** — Per-tenant isolation Terraform | ✅ | [`fleet-managers/terraform/foundation/tenants/`](./fleet-managers/terraform/foundation/tenants/) — namespace + NetworkPolicy + ResourceQuota + IRSA |
+| **B** — Embeddable observability MCP server | ✅ | [`mcp-server/`](./mcp-server/) — runnable, `npm run toy` + `npm run tenant` |
+| **C** — Guardrails + cost middleware | ✅ | `src/lib/policy/{gate.ts, scanners.ts, output-validator.ts}` + `src/lib/observability/metered-invoke.ts` (per-tenant budget guard) |
+| **D** — Submit-a-vibe-coded-app portal slice | ✅ | [`llm-product-poc/`](./llm-product-poc/) — live at https://portal.ssp.mightybee.dev |
+
+### Deliverable 3 — README
+
+| Required section | Where |
+| --- | --- |
+| How to run | this file § "How to run / explore" |
+| What I'd do next given another full day | this file § "What I'd do next" |
+| **AI tools — where they helped, where you overrode** | this file § "AI tools — how I used them, where I overrode" |
+
+---
 
 ## Read first — Deliverable 1 (Design Doc)
 
