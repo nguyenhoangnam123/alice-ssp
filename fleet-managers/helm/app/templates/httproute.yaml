@@ -12,7 +12,8 @@ metadata:
 spec:
   # parentRefs point at the SHARED Gateway in the gateway-system namespace, provisioned by
   # foundation/40-platform-addons. One ALB serves all tenant HTTPRoutes (internal or public),
-  # routed by hostname. ReferenceGrant on the Gateway side allows attachment from any
+  # routed by hostname. Each service helm release renders ITS OWN HTTPRoute — only the
+  # Gateway is shared. ReferenceGrant on the Gateway side admits attachment from any
   # ssp.platform/tenant-labeled namespace.
   parentRefs:
     - name: {{ if .Values.route.vpnInternal }}alb-internal-shared{{ else }}alb-public-shared{{ end }}
@@ -20,15 +21,18 @@ spec:
       sectionName: {{ if .Values.route.tls }}https{{ else }}http{{ end }}
   hostnames:
     - {{ .Values.route.host | quote }}
-    {{- range .Values.route.additionalHosts }}
-    - {{ . | quote }}
-    {{- end }}
   rules:
     - matches:
         - path:
             type: PathPrefix
             value: /
       backendRefs:
-        - name: {{ include "app.fullname" . }}
-          port: {{ .Values.service.port }}
+        # Defaults to the chart's own Service; can be overridden when a chart
+        # release is route-only (deployment + service disabled) and the backend
+        # is a Service rendered by another chart release.
+        - name: {{ .Values.route.backendService | default (include "app.fullname" .) }}
+          {{- with .Values.route.backendNamespace }}
+          namespace: {{ . }}
+          {{- end }}
+          port: {{ .Values.route.backendPort | default .Values.service.port }}
 {{- end }}

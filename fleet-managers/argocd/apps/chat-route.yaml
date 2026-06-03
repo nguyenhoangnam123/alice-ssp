@@ -1,0 +1,39 @@
+# ArgoCD Application for the chat-route helm release — a route-only chart
+# instance that owns chat.ssp.mightybee.dev. Renders ONLY an HTTPRoute
+# (backendRef → ssp-portal-app Service in ssp-portal namespace).
+#
+# Sits next to the ssp-portal Application; together they satisfy "each
+# service has its own HTTPRoute; only the Gateway is shared." The portal
+# HTTPRoute claims portal.*, this one claims chat.*. Both attach to the
+# same alb-public-shared Gateway in gateway-system.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: chat-route
+  namespace: argocd
+  labels:
+    ssp.platform/tenant: "ssp-portal"
+    ssp.platform/product: "ssp-portal"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nguyenhoangnam123/alice-ssp.git
+    targetRevision: main
+    path: fleet-managers/helm/app
+    helm:
+      valueFiles:
+        - ../../platform-apps/chat-route/values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    # Render in the same namespace as the portal Service so the HTTPRoute
+    # → Service backendRef doesn't need a ReferenceGrant. Cross-namespace
+    # refs are possible but pointless complexity for the same-pod case.
+    namespace: ssp-portal
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false

@@ -7,7 +7,14 @@ image:
 
 replicaCount: 1
 
+# Toggles for partial chart releases — used for the route-only pattern where
+# a separate release just adds an HTTPRoute pointing at another release's
+# Service (e.g. a per-hostname route in front of an existing app).
+deployment:
+  enabled: true
+
 service:
+  enabled: true
   port: 8080
   type: ClusterIP
 
@@ -31,13 +38,22 @@ ingress:
 #       dataFrom: [{ extract: { key: ssp/<tenant>/<app>/db } }]
 externalSecrets: []
 
-# Gateway API HTTPRoute (MVP2 — kept so per-service rollout is one value flip).
+# Gateway API HTTPRoute. Each service helm release renders its OWN HTTPRoute
+# (only the Gateway is shared). For most services backendRef points at the
+# chart's own Service; route-only releases (deployment.enabled=false +
+# service.enabled=false) set backendService + backendNamespace to point at
+# another release's Service.
 route:
   enabled: false
   host: ""
   vpnInternal: true
   tls: false
   annotations: {}
+  # Optional override — defaults to {{ include "app.fullname" . }} in the
+  # chart namespace.
+  backendService: ""
+  backendNamespace: ""
+  backendPort: ""
 
 resources:
   requests:

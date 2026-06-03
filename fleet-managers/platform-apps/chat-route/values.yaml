@@ -1,0 +1,48 @@
+# Route-only helm release. Renders ONLY an HTTPRoute (no Deployment, no
+# Service, no ServiceAccount) for chat.ssp.mightybee.dev, backed by the
+# portal's existing Service in the ssp-portal namespace.
+#
+# This satisfies the "each service has its own HTTPRoute; only the Gateway
+# is shared" invariant — the portal's HTTPRoute now claims only
+# portal.ssp.mightybee.dev. The chat hostname is owned by THIS release.
+#
+# Middleware in the portal Next.js app still gates which paths are valid on
+# chat.* (only /chat, /api/chat, /api/auth, and static assets).
+#
+# When the Ring-3 migration lands (chat as a real tenant deployment), this
+# release goes away — the new chat helm release will render its own
+# Deployment + Service + HTTPRoute the standard way.
+
+deployment:
+  enabled: false
+service:
+  enabled: false
+serviceAccount:
+  create: false
+
+route:
+  enabled: true
+  host: chat.ssp.mightybee.dev
+  vpnInternal: false
+  tls: true
+  backendService: ssp-portal-app   # the portal's Service
+  backendNamespace: ssp-portal     # cross-namespace backend
+  backendPort: 3000                # portal containerPort
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: chat.ssp.mightybee.dev
+
+# Tags for cost-attribution labels even on a route-only release — keeps the
+# chart helper templates happy and gives the Gateway-API ReferenceGrant
+# selector something to match on.
+tenant:
+  id: "ssp-portal"
+  domain: "ssp-portal"
+  department: "platform"
+  costCenter: "platform-eng"
+  product: "ssp-portal"
+  environment: "shared-prod"
+
+ssp:
+  serviceId: "platform-chat-route"
+  changeRequestId: ""
+  revisionId: "argocd-managed"
