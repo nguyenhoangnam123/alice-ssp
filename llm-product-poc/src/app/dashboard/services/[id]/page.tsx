@@ -19,6 +19,7 @@ import { UsageWidget } from "@/components/usage-widget";
 import { ServiceTabs } from "@/components/service-tabs";
 import { McpAuditLogs, type AuditEvent } from "@/components/mcp-audit-logs";
 import { SecretKeysReadonly } from "@/components/secret-keys-readonly";
+import { DesiredSpecPanel } from "@/components/desired-spec-panel";
 import { guardedActions } from "@/lib/db/schema";
 import { listKeys as listSecretKeys } from "@/lib/secrets/manager";
 
@@ -310,6 +311,9 @@ export default async function ServicePage({ params }: { params: Promise<{ id: st
                   monthCapUsd={usage.monthCapUsd}
                   callsThisMonth={usage.callsThisMonth}
                   recentCalls={usage.recentCalls}
+                />
+                <DesiredSpecPanel
+                  spec={(svc.desiredSpec ?? {}) as Record<string, unknown>}
                 />
                 <SecretKeysReadonly items={secretKeys} />
               </div>

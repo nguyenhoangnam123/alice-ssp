@@ -115,6 +115,18 @@ export const services = pgTable(
     gitRepo: text("git_repo").notNull(),
     description: text("description").notNull(), // mandatory — AI prompt input
     currentStatus: serviceStatus("current_status").notNull().default("na"),
+    // Canonical desired-state record for this service. Populated by the
+    // orchestrator on every CR transition to `applied`, by merging the CR's
+    // payload (replicaCount, resources, env, requiredSecrets, image, route).
+    // GIT REMAINS AUTHORITATIVE TODAY — this column is a shadow record so
+    // the platform can answer "what does the SSP think the spec is?" without
+    // reading the fleet repo. The full controller-pattern flip (DB
+    // authoritative; orchestrator renders → git) is documented as Ring 3
+    // work in deliverable1-04.
+    desiredSpec: jsonb("desired_spec")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

@@ -181,6 +181,62 @@ transition appends one row; the orchestrator never deletes. A platform engineer
 debugging "why is acme/hello-world at this version?" runs one SQL query and gets
 every step.
 
+## Desired-state controller (target architecture)
+
+The current implementation treats **git as the source of truth** for deployment
+config: every CR opens a PR; the merged values.yaml is what ArgoCD applies;
+the portal DB is the *workflow* plane (CR state, revisions, audit) but is
+NOT authoritative for what the cluster should run.
+
+This works for the happy path but produces gaps that we've hit live during
+this build:
+
+- **Platform-served services** (the demo chat) have no AI artifacts to
+  generate; they live inside the portal codebase via `route.additionalHosts`.
+  A CR against one of them produces a broken PR.
+- **Decommission** is not a CR-shaped operation today; cleanup requires
+  out-of-band `terraform destroy` + DB delete.
+- **Drift detection** is bounded by ArgoCD's selfHeal — out-of-band git
+  edits get reverted but produce no audit row in the DB.
+
+The target architecture flips this: the **SSP API/DB is authoritative for
+desired state**, git + ArgoCD are *materialization channels*, and cluster
+probes + ArgoCD sync status flow back as *observed state*.
+
+```mermaid
+flowchart LR
+  CR[CR submission] --> Spec[(services.desired_spec<br/>DB-authoritative)]
+  Spec -->|deterministic renderer| Git[fleet repo<br/>values.yaml + argocd app]
+  Git --> Argo[ArgoCD]
+  Argo --> K8s[Cluster]
+  K8s -->|prober| Observed[(service_revisions.<br/>health_status,<br/>existence_status)]
+  Argo -. sync status<br/>(polled) .-> Observed
+  Observed -. UI .-> Portal[Portal]
+  Spec -. UI .-> Portal
+```
+
+In the controller pattern the AI's role narrows — instead of generating the
+final values.yaml ad-hoc, it **proposes a diff to the desired spec** and a
+deterministic renderer produces the git artifacts. The mechanical separation
+makes drift detectable: any `desired_spec ≠ rendered_git ≠ observed_cluster`
+combination is a flag.
+
+### What ships today
+
+A **shadow column** — `services.desired_spec jsonb` — populated by the
+orchestrator on every CR → `applied` transition. The merge is conservative:
+service-config CRs touch `replicaCount`, `resources`, `image`, `route`,
+`env`, `service`; secret CRs touch only `requiredSecrets` (the *list*
+of keys, never values). The portal UI renders this on the **AI settings
+tab** as the "Desired spec" panel so an operator can compare the platform's
+view of intent against git side-by-side.
+
+Git remains the materializer; this column is read-only-from-the-cluster's-
+perspective and exists today purely as a parking spot for the controller
+flip. The full flip (renderer + drift surface + DB-authoritative writes)
+is scoped in [`deliverable1-04`](./deliverable1-04-lifecycle-and-ownership.md)
+as Ring 3.
+
 ## Data model
 
 ```mermaid

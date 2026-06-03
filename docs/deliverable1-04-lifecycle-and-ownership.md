@@ -250,7 +250,22 @@ Ranked by signal (LLM observability + budget guard already shipped in Ring
 
 ### What's required to stay usable from 5 → 50 apps (Ring 3)
 
-1. HA portal + HA prober (single-replica today is fine for one tenant; not
+1. **Desired-state controller flip.** Today `services.desired_spec` is a
+   shadow column populated on each CR → applied; git is authoritative for
+   the cluster materialization. Ring 3 makes the DB authoritative: a
+   deterministic renderer reads `desired_spec` and emits git artifacts;
+   ArgoCD reconciles as before; a drift watcher polls ArgoCD + the cluster
+   and surfaces `desired_spec ≠ observed` on the service detail page. This
+   closes three gaps observed during this build:
+   - platform-served services (chat) can be declared as CRs without
+     producing a fleet PR (their `desired_spec` differs from a normal
+     tenant deployment but is still the SSP's authoritative record).
+   - **Decommission** becomes a CR that clears `desired_spec`; renderer
+     emits a PR that deletes the fleet files.
+   - **Drift detection** falls out for free — any out-of-band git or
+     kubectl edit shows up as `observed_state ≠ desired_spec`.
+   See [deliverable1-01 § "Desired-state controller (target architecture)"](./deliverable1-01-architecture.md#desired-state-controller-target-architecture).
+2. HA portal + HA prober (single-replica today is fine for one tenant; not
    for fifty).
 2. Image scanning + signature verification (Cosign at admission).
 3. **Network-enforced cost guardrail** — today the tenant-side MCP is

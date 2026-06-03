@@ -22,6 +22,38 @@ async function simulateMerge(formData: FormData) {
   redirect(`/dashboard/change-requests/${crId}`);
 }
 
+// Server-action analogue to the orchestrator's mergeDesiredSpec helper.
+// Duplicated here intentionally — the page-level server action shouldn't
+// reach into orchestrator internals. The secret variant only touches
+// requiredSecrets, never the value.
+async function mergeDesiredSpecForSecret(
+  serviceId: string,
+  payload: { action: string; key?: string },
+) {
+  const [svc] = await db
+    .select({ spec: services.desiredSpec })
+    .from(services)
+    .where(eq(services.id, serviceId))
+    .limit(1);
+  if (!svc) return;
+  const current = { ...(svc.spec as Record<string, unknown>) };
+  const required = new Set<string>(
+    Array.isArray(current.requiredSecrets)
+      ? (current.requiredSecrets as string[])
+      : [],
+  );
+  const key = (payload.key ?? "").trim();
+  if (key) {
+    if (payload.action === "upsert") required.add(key);
+    else if (payload.action === "delete") required.delete(key);
+  }
+  current.requiredSecrets = [...required].sort();
+  await db
+    .update(services)
+    .set({ desiredSpec: current, updatedAt: new Date() })
+    .where(eq(services.id, serviceId));
+}
+
 async function approveSecret(formData: FormData) {
   "use server";
   const crId = String(formData.get("cr_id") ?? "");
@@ -55,6 +87,13 @@ async function approveSecret(formData: FormData) {
     .update(serviceRevisions)
     .set({ crStatus: "applied", serviceStatus: "working" })
     .where(eq(serviceRevisions.changeRequestId, crId));
+  // Update the shadow desired_spec.requiredSecrets list now that the change
+  // is applied. Same merge semantics as the orchestrator's helper.
+  await mergeDesiredSpecForSecret(svc.id, {
+    action: result.action,
+    key: result.key,
+  });
+
   emitGuardedAction({
     tenantId: svc.tenantId,
     actorUserId: user.id,

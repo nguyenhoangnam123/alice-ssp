@@ -319,6 +319,84 @@ export async function markProvisioned(changeRequestId: string) {
     .update(serviceRevisions)
     .set({ crStatus: "applied", serviceStatus: "working" })
     .where(eq(serviceRevisions.changeRequestId, cr.id));
+
+  // Shadow desired-state update — merge this CR's payload into services.desired_spec.
+  // Git remains the source-of-truth materializer for now; this column is the
+  // platform's audit-ready record of intent. See deliverable1-01 § "Desired
+  // state controller (target)".
+  await mergeDesiredSpec(cr.serviceId, cr.payload as Record<string, unknown> | null);
+}
+
+/**
+ * Shallow-merge a CR payload into the service's desired_spec. Drops anything
+ * tenant-controlled that we don't want surfaced as platform intent
+ * (e.g. raw secret values — only the KEY name is recorded in `requiredSecrets`).
+ */
+async function mergeDesiredSpec(
+  serviceId: string,
+  payload: Record<string, unknown> | null,
+) {
+  if (!payload || typeof payload !== "object") return;
+
+  const [svc] = await db
+    .select({ spec: services.desiredSpec })
+    .from(services)
+    .where(eq(services.id, serviceId))
+    .limit(1);
+  if (!svc) return;
+
+  const current = { ...(svc.spec as Record<string, unknown>) };
+
+  // Secret CRs touch only the requiredSecrets list — never store the value.
+  if (payload.kind === "secret") {
+    const required = new Set<string>(
+      Array.isArray(current.requiredSecrets)
+        ? (current.requiredSecrets as string[])
+        : [],
+    );
+    const key = String(payload.key ?? "").trim();
+    if (key) {
+      if (payload.action === "upsert") required.add(key);
+      else if (payload.action === "delete") required.delete(key);
+    }
+    current.requiredSecrets = [...required].sort();
+  } else {
+    // Service-config CRs: shallow merge the documented spec keys. We
+    // explicitly DO NOT spread the whole payload — that would let a CR set
+    // arbitrary fields on the spec.
+    const spec: Record<string, unknown> = current;
+    for (const key of ["replicaCount", "image", "route", "service"] as const) {
+      if (payload[key] !== undefined) spec[key] = payload[key];
+    }
+    if (payload.resources && typeof payload.resources === "object") {
+      spec.resources = {
+        ...((spec.resources as Record<string, unknown>) ?? {}),
+        ...payload.resources,
+      };
+    }
+    if (Array.isArray(payload.env)) {
+      // env is a name/value array; merge by name so a CR can update one var
+      // without rewriting all.
+      type EnvVar = { name: string; value: string };
+      const existing: EnvVar[] = Array.isArray(spec.env)
+        ? (spec.env as EnvVar[])
+        : [];
+      const byName = new Map(existing.map((e) => [e.name, e]));
+      for (const e of payload.env as EnvVar[]) {
+        if (e && typeof e === "object" && typeof e.name === "string") {
+          byName.set(e.name, e);
+        }
+      }
+      spec.env = [...byName.values()].sort((a, b) =>
+        a.name.localeCompare(b.name),
+      );
+    }
+  }
+
+  await db
+    .update(services)
+    .set({ desiredSpec: current, updatedAt: new Date() })
+    .where(eq(services.id, serviceId));
 }
 
 // ----- helpers -------------------------------------------------------------------------
