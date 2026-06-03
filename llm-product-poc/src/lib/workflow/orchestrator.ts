@@ -9,6 +9,7 @@ import {
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { runPolicyGate } from "@/lib/policy/gate";
+import { validateGeneratedArtifacts } from "@/lib/policy/output-validator";
 import { probeRevisionNow } from "@/lib/workflow/prober";
 import {
   startSpan,
@@ -182,6 +183,39 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
     });
     endSpan(rootSpanId, "error", { reason: "ai_rejected" });
     return { state: "rejected", reason: result.reason };
+  }
+
+  // Layer 4 — deterministic re-validation of the AI's artifacts. Even if a
+  // prompt-injection succeeded earlier, the parsed YAML still has to pass
+  // these rules: no privileged, no hostNetwork, no hostPath, replica cap,
+  // ArgoCD finalizer + tenant-namespace destination. Closes the loop on the
+  // prompt-injection defence stack.
+  const outputCheck = validateGeneratedArtifacts(result.artifacts);
+  if (!outputCheck.ok) {
+    emitGuardedAction({
+      tenantId: tenant.id,
+      actorUserId: cr.requestedBy,
+      action: "ai.output_validation_failed",
+      resource: `change_request:${cr.id}`,
+      outcome: "blocked",
+      detail: outputCheck.violations.join("; "),
+    });
+    await transition(
+      cr.id,
+      "ai_validation_rejected",
+      `Generated YAML failed re-validation: ${outputCheck.violations.join("; ")}`,
+    );
+    await setServiceStatus(svc.id, "rejected");
+    await upsertRevision({
+      crId: cr.id,
+      svcId: svc.id,
+      svcStatus: "rejected",
+      crStatus: "ai_validation_rejected",
+      existenceStatus: "rejected",
+      aiSummary: `**Step**: Output YAML re-validation rejected\n\n**Violations**:\n${outputCheck.violations.map((v) => `- ${v}`).join("\n")}\n\n**Why**: even after the AI approved, the parsed values.yaml / Application must pass the platform's deterministic re-check. Prompt-injection that survives layers 1-3 can talk the AI into anything, but it can't talk the YAML parser into anything.`,
+    });
+    endSpan(rootSpanId, "error", { reason: "output_revalidation_failed" });
+    return { state: "rejected", reason: outputCheck.violations.join("; ") };
   }
 
   await transition(cr.id, "ai_validation_passed");

@@ -2,6 +2,7 @@ import type { Service, Tenant } from "@/lib/db/schema";
 import { db } from "@/lib/db";
 import { services } from "@/lib/db/schema";
 import { and, eq, ne } from "drizzle-orm";
+import { scanInjection, scanPii } from "./scanners";
 
 /**
  * Deterministic policy gate — the OPA / Conftest equivalent for MVP1.
@@ -26,6 +27,20 @@ export async function runPolicyGate(args: {
     violations.push(
       "description must be at least 20 characters (it is the AI prompt input)",
     );
+  } else {
+    // 1a. Prompt-injection markers (layer 1 of deliverable1-03). Catches the
+    // obvious 'ignore previous instructions', system-role impersonation, and
+    // fenced-block takeover patterns. Sophisticated attacks need layers 2-4.
+    for (const f of scanInjection(args.service.description)) {
+      violations.push(`prompt-injection: ${f.message} [${f.rule}]`);
+    }
+
+    // 1b. PII regex pre-filter (PII layer A). Cheap; rejects the obvious so
+    // we never POST raw PII to Bedrock or store it in the DB. We surface only
+    // the redacted form so this rejection record is itself PII-clean.
+    for (const f of scanPii(args.service.description)) {
+      violations.push(`PII detected: ${f.message} [${f.rule}]`);
+    }
   }
 
   // 2. git_repo must look like a valid https URL.
