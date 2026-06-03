@@ -10,6 +10,12 @@ import {
 import { eq } from "drizzle-orm";
 import { runPolicyGate } from "@/lib/policy/gate";
 import { probeRevisionNow } from "@/lib/workflow/prober";
+import {
+  startSpan,
+  endSpan,
+  checkBudget,
+  emitGuardedAction,
+} from "@/lib/observability";
 import { generateArtifacts, type AgentResult } from "@/lib/ai/agent";
 import { openFleetPr } from "@/lib/github/pr";
 
@@ -65,6 +71,14 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
   const [tenant] = await db.select().from(tenants).where(eq(tenants.id, svc.tenantId)).limit(1);
   if (!tenant) throw new Error(`Tenant ${svc.tenantId} not found`);
 
+  // Root span for the whole CR. Trace ID = CR ID so every downstream emit
+  // (Bedrock call, prober probe, etc.) joins on a single key.
+  const rootSpanId = startSpan({
+    traceId: cr.id,
+    name: "orch.process_change_request",
+    attributes: { tenant_id: tenant.id, cr_id: cr.id, service_id: svc.id },
+  });
+
   // --- Step 1 — deterministic policy gate -----------------------------------------------
   const gate = await runPolicyGate({ service: svc, tenant });
   if (!gate.ok) {
@@ -78,12 +92,53 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
       existenceStatus: "rejected",
       aiSummary: `**Step**: Policy gate rejected\n\n**Reason**: ${gate.violations.join("; ")}\n\n**Current state**: Service unchanged.\n\n**Desired state**: (rejected — see reason above)`,
     });
+    endSpan(rootSpanId, "error", { reason: "policy_gate" });
     return { state: "rejected", reason: gate.violations.join("; ") };
   }
   await transition(cr.id, "policy_gate_passed");
   await setServiceStatus(svc.id, "aiReview");
 
+  // --- Step 1.5 — per-tenant Bedrock budget guard ---------------------------------------
+  // Before any token is spent, refuse the call if month-to-date Bedrock spend
+  // is at or over the tenant's cap. Returns spent + cap so the reviewer sees
+  // exactly what triggered the block; emits a `bedrock.budget_exceeded`
+  // guarded action so the audit feed surfaces it.
+  const budget = await checkBudget(tenant.id);
+  if (!budget.ok) {
+    const reason = `Tenant Bedrock monthly cap reached: spent $${budget.spentUsd.toFixed(4)} of $${budget.capUsd.toFixed(2)}`;
+    emitGuardedAction({
+      tenantId: tenant.id,
+      actorUserId: cr.requestedBy,
+      action: "bedrock.budget_exceeded",
+      resource: `change_request:${cr.id}`,
+      outcome: "blocked",
+      detail: reason,
+    });
+    await transition(cr.id, "ai_validation_rejected", reason);
+    await setServiceStatus(svc.id, "rejected");
+    await upsertRevision({
+      crId: cr.id,
+      svcId: svc.id,
+      svcStatus: "rejected",
+      crStatus: "ai_validation_rejected",
+      existenceStatus: "rejected",
+      aiSummary: `**Step**: Budget guard rejected\n\n**Reason**: ${reason}\n\n**Current state**: Service unchanged. AI was never invoked.\n\n**Desired state**: (rejected — raise cap or wait until next month)`,
+    });
+    endSpan(rootSpanId, "error", { reason: "budget_exceeded", spent_usd: budget.spentUsd, cap_usd: budget.capUsd });
+    return { state: "rejected", reason };
+  }
+
   // --- Step 2 — AI call (one round trip, two CR transitions: validation + generation) ---
+  // Open a child span so the Bedrock call nests under it visibly. agent.ts
+  // opens its own bedrock-call span inside meteredBedrockInvoke; this one is
+  // the AI step wrapper so prompt construction + retries are also captured.
+  const aiSpanId = startSpan({
+    traceId: cr.id,
+    parentSpanId: rootSpanId,
+    name: "orch.ai_invoke",
+    attributes: { tenant_id: tenant.id, mode: process.env.AI_MODE ?? "mock" },
+  });
+
   let result: AgentResult;
   try {
     result = await generateArtifacts({
@@ -91,8 +146,14 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
       tenant,
       changeRequest: cr,
       currentStateSummary: "(initial submission)",
+      parentSpanId: aiSpanId,
     });
+    endSpan(aiSpanId, "ok", { kind: result.kind });
   } catch (err) {
+    endSpan(aiSpanId, "error", {
+      error_message: err instanceof Error ? err.message : String(err),
+    });
+    endSpan(rootSpanId, "error", { reason: "ai_invoke_error" });
     const msg = err instanceof Error ? err.message : String(err);
     console.error("AI agent failed", msg);
     await transition(cr.id, "ai_validation_rejected", `AI agent error: ${msg}`);
@@ -119,6 +180,7 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
       existenceStatus: "rejected",
       aiSummary: `**Step**: AI validation rejected\n\n**Reason**: ${result.reason}\n\n**Current state**: Service unchanged.\n\n**Desired state**: (rejected — see reason above)`,
     });
+    endSpan(rootSpanId, "error", { reason: "ai_rejected" });
     return { state: "rejected", reason: result.reason };
   }
 
@@ -181,6 +243,7 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
     cdManifestRef: pr.url,
   });
 
+  endSpan(rootSpanId, "ok", { state: "platform_reviewing", pr_url: pr.url });
   return { state: "platform_reviewing", prUrl: pr.url };
 }
 

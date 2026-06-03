@@ -1,8 +1,5 @@
 import type { Service, Tenant, ChangeRequest } from "@/lib/db/schema";
-import {
-  BedrockRuntimeClient,
-  InvokeModelCommand,
-} from "@aws-sdk/client-bedrock-runtime";
+import { meteredBedrockInvoke } from "@/lib/observability/metered-invoke";
 import { systemPrompt, userPrompt } from "./prompts";
 
 export type Artifacts = {
@@ -29,6 +26,8 @@ export async function generateArtifacts(args: {
   tenant: Tenant;
   changeRequest: ChangeRequest;
   currentStateSummary?: string;
+  /** Optional parent span id — orchestrator opens an "ai_invoke" span and passes it. */
+  parentSpanId?: string;
 }): Promise<AgentResult> {
   const mode = process.env.AI_MODE ?? "mock";
 
@@ -43,23 +42,20 @@ export async function generateArtifacts(args: {
 
 // ---------------------------------------------------------------------------
 // Bedrock — real Claude inference
+//
+// Goes through meteredBedrockInvoke (lib/observability/) which wraps the call
+// in: span open, invoke, parse usage, compute USD, INSERT llm_calls row, emit
+// MCP-shaped EMF event, span close. The orchestrator already pre-checked the
+// tenant's budget before we got here.
 // ---------------------------------------------------------------------------
-
-let cachedClient: BedrockRuntimeClient | null = null;
-function client(): BedrockRuntimeClient {
-  if (!cachedClient) {
-    cachedClient = new BedrockRuntimeClient({
-      region: process.env.BEDROCK_REGION ?? "eu-west-1",
-    });
-  }
-  return cachedClient;
-}
 
 async function bedrockArtifacts(args: {
   service: Service;
   tenant: Tenant;
   changeRequest: ChangeRequest;
   currentStateSummary?: string;
+  /** Span the orchestrator opened for the AI step; we nest the bedrock call under it. */
+  parentSpanId?: string;
 }): Promise<AgentResult> {
   const modelId =
     process.env.BEDROCK_MODEL_ID ?? "eu.anthropic.claude-opus-4-6-v1";
@@ -85,35 +81,14 @@ async function bedrockArtifacts(args: {
     ],
   };
 
-  const cmd = new InvokeModelCommand({
+  const { rawText: text } = await meteredBedrockInvoke({
+    traceId: args.changeRequest.id,
+    parentSpanId: args.parentSpanId,
+    tenantId: args.tenant.id,
+    crId: args.changeRequest.id,
     modelId,
-    contentType: "application/json",
-    accept: "application/json",
-    body: JSON.stringify(body),
+    body,
   });
-
-  const start = Date.now();
-  const res = await client().send(cmd);
-  const elapsed = Date.now() - start;
-
-  const decoded = new TextDecoder().decode(res.body);
-  const parsed = JSON.parse(decoded) as {
-    content: Array<{ type: string; text?: string }>;
-    usage?: {
-      input_tokens?: number;
-      output_tokens?: number;
-      cache_read_input_tokens?: number;
-    };
-  };
-
-  const text = parsed.content
-    .filter((b) => b.type === "text")
-    .map((b) => b.text ?? "")
-    .join("");
-
-  console.log(
-    `bedrock ok model=${modelId} ms=${elapsed} tok_in=${parsed.usage?.input_tokens ?? "?"} tok_out=${parsed.usage?.output_tokens ?? "?"} cache_read=${parsed.usage?.cache_read_input_tokens ?? 0}`,
-  );
 
   // Rejection short-circuit. The system prompt instructs Claude to emit ONLY a
   // ```reject block when the CR violates a constraint.

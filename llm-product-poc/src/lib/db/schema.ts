@@ -9,6 +9,8 @@ import {
   uniqueIndex,
   index,
   primaryKey,
+  numeric,
+  integer,
 } from "drizzle-orm/pg-core";
 
 // --- Enums -----------------------------------------------------------------
@@ -53,6 +55,12 @@ export const tenants = pgTable(
     tags: jsonb("tags").$type<Record<string, string>>().notNull().default({}),
     department: text("department").notNull(),
     headOfDepartment: text("head_of_department").notNull(),
+    // Hard cap on Bedrock spend per calendar month. checkBudget() refuses the
+    // ai_invoke step once month-to-date sum(llm_calls.cost_usd) >= this value.
+    // Default $5/mo is intentionally low so a brand-new tenant can't run away.
+    bedrockMonthlyCapUsd: numeric("bedrock_monthly_cap_usd", { precision: 10, scale: 2 })
+      .notNull()
+      .default("5.00"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -181,6 +189,39 @@ export const serviceRevisions = pgTable(
     serviceIdx: index("service_revisions_service_idx").on(t.serviceId),
     // 1 CR → 1 revision. Orchestrator upserts on change_request_id.
     crUnique: uniqueIndex("service_revisions_cr_unique").on(t.changeRequestId),
+  }),
+);
+
+// Per-call Bedrock audit. Append-only; the budget guard reads SUM(cost_usd)
+// from this table, dashboards render rate-of-spend, security audits the model
+// allowlist drift via DISTINCT model_id.
+export const llmCalls = pgTable(
+  "llm_calls",
+  {
+    id: text("id").primaryKey(),
+    changeRequestId: text("change_request_id").references(
+      () => changeRequests.id,
+      { onDelete: "set null" },
+    ),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    modelId: text("model_id").notNull(),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+    cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
+    costUsd: numeric("cost_usd", { precision: 10, scale: 6 }).notNull(),
+    latencyMs: integer("latency_ms"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    tenantTimeIdx: index("llm_calls_tenant_time_idx").on(
+      t.tenantId,
+      t.createdAt,
+    ),
   }),
 );
 
