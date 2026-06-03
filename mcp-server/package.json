@@ -1,0 +1,25 @@
+{
+  "name": "@ssp/observability-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server vibe-coded apps consume to emit spans, record LLM token cost, and log guarded actions.",
+  "type": "module",
+  "bin": {
+    "ssp-observability-mcp": "./dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "toy": "tsx toy-app/app.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

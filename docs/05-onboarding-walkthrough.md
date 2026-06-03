@@ -106,24 +106,16 @@ The service detail page renders one row per CR with three badges:
 Click the row to expand. Inside you see the full status history:
 
 ```mermaid
-gantt
-  title CR lifecycle (real timing from the api-service initial submission)
-  dateFormat HH:mm:ss
-  axisFormat %H:%M:%S
-  section Pre-AI
-  submitted : milestone, m1, 02:07:23, 0s
-  policy_gate_passed (≈30ms) : 02:07:23, 1s
-  section AI agent
-  Bedrock InvokeModel (≈12s) : crit, 02:07:24, 13s
-  ai_validation_passed : milestone, m2, 02:07:37, 0s
-  ai_artifacts_generated : milestone, m3, 02:07:37, 0s
-  section Hand-off
-  PR opened (Octokit) : 02:07:37, 4s
-  platform_reviewing : milestone, m4, 02:07:41, 0s
-  section Human gate
-  Awaiting review : platform_reviewing, 02:07:41, 30m
-  applied (PR merged + webhook) : milestone, m5, 02:35:00, 0s
+flowchart LR
+  s1[submitted] -->|≈30ms| s2[policy_gate_passed]
+  s2 -->|≈12s — Bedrock InvokeModel| s3[ai_validation_passed]
+  s3 -->|same step| s4[ai_artifacts_generated]
+  s4 -->|≈4s — Octokit createPR| s5[platform_reviewing]
+  s5 -.->|human gate — variable| s6[applied]
 ```
+
+Indicative durations from the live api-service run; the human-gate step is unbounded
+by design.
 
 The badge progression on this single row:
 

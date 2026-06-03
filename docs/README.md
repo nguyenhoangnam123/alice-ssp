@@ -25,6 +25,11 @@ review surface and the cost team clean per-tenant attribution.
 | [03-qualification.md](./03-qualification.md) | You want an honest read of where the platform is strong (automation, security) and where the gaps are (HA, image scanning, idle cleanup). Done vs not-yet for each quality. |
 | [04-system-design.md](./04-system-design.md) | You want the AWS + GitHub topology, Terraform module layout, tag schema, and end-to-end CR sequence in one place. |
 | [05-onboarding-walkthrough.md](./05-onboarding-walkthrough.md) | You want the click-by-click walkthrough at `portal.ssp.mightybee.dev` — every form field, every badge, with the real PR numbers / CR IDs / URLs from the live api-service onboarding. |
+| [06-tradeoffs.md](./06-tradeoffs.md) | You want the four real architectural decisions with reasoning — EKS vs App Runner, in-process orchestrator vs Step Functions, public ALB vs internal, 1-level vs 2-level FQDN. |
+| [07-rollout.md](./07-rollout.md) | You want to see what ships first, what stays manual at launch, and what unlocks the next 10x of apps. Three rings. |
+| [08-ownership.md](./08-ownership.md) | You want the explicit boundary between AI Infra and DevOps, with three interface contracts (network ingress, IAM seed, secret plane). |
+| [09-llm-observability.md](./09-llm-observability.md) | You want the design for per-tenant LLM token cost as a first-class signal + end-to-end agent-chain tracing. Companion to the MCP server slice. |
+| [10-prompt-injection-and-pii.md](./10-prompt-injection-and-pii.md) | You want the layered defense design for prompt injection + PII handling. Five layers; what ships when. |
 
 **Engineering deep-dive**
 
