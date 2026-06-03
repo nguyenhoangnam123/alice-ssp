@@ -1,0 +1,41 @@
+tenant:
+  id: cbdbfcd6373448318d82ddc58d
+  domain: alice
+  department: platform
+
+ssp:
+  serviceId: 01KT6TMMYGT1BSBCD1G5AWFJ91
+  changeRequestId: 01KT6TMMYG0GTD05010AZS3MF9
+
+replicaCount: 1
+
+image:
+  repository: docker.io/library/nginx
+  tag: "1.27.3-alpine"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+route:
+  enabled: true
+  host: fuzz-ok.ssp.mightybee.dev
+  vpnInternal: false
+  tls:
+    enabled: true
+    secretName: fuzz-ok-tls
+
+containerPort: 8080
+
+securityContext:
+  runAsUser: 10001
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+
+podSecurityContext:
+  fsGroup: 10001
