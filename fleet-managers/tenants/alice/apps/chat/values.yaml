@@ -1,0 +1,37 @@
+tenant:
+  id: cbdbfcd6373448318d82ddc58d
+  domain: alice
+  department: platform
+
+ssp:
+  serviceId: 01KTC00CHATSV00000000000001
+  changeRequestId: 01KT71XT7DWEK5KNHJJWDFRJ8V
+
+replicaCount: 2
+
+image:
+  repository: 471112984880.dkr.ecr.ap-southeast-1.amazonaws.com/alice/chat
+  tag: latest
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+route:
+  enabled: true
+  host: chat.ssp.mightybee.dev
+  vpnInternal: false
+  tls:
+    enabled: true
+    secretName: chat-ssp-mightybee-dev-tls
+
+serviceAccount:
+  create: true
+  name: chat
+
+port: 3000
