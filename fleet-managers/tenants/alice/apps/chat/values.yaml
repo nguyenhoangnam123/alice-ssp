@@ -1,0 +1,47 @@
+tenant:
+  id: cbdbfcd6373448318d82ddc58d
+  domain: alice
+  department: platform
+
+ssp:
+  serviceId: 01KT78ZPKE5JFAF17NJ5D9BJMY
+  changeRequestId: 01KT78ZPKE3C1MHE8YW3NC5G3N
+
+replicaCount: 1
+
+image:
+  repository: docker.io/library/nginx
+  tag: "1.27-alpine"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+containerPort: 8080
+
+route:
+  enabled: true
+  host: chat.ssp.mightybee.dev
+  vpnInternal: false
+  tls:
+    enabled: true
+    secretName: chat-tls
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  initialDelaySeconds: 3
+  periodSeconds: 5
