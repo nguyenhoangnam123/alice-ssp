@@ -20,6 +20,9 @@ spec:
       sectionName: {{ if .Values.route.tls }}https{{ else }}http{{ end }}
   hostnames:
     - {{ .Values.route.host | quote }}
+    {{- range .Values.route.additionalHosts }}
+    - {{ . | quote }}
+    {{- end }}
   rules:
     - matches:
         - path:
