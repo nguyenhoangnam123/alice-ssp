@@ -207,9 +207,6 @@ flowchart LR
   re-parse of the generated `values.yaml` + `argocd.yaml` before PR open.
 - PII regex pre-filter on description (layer A): email, IPv4, AWS access
   key, JWT, US SSN, credit card (Luhn-validated). Redacted in audit log.
-- **Chat service** at `chat.ssp.mightybee.dev` — Cognito-gated, every
-  message routes through `meteredBedrockInvoke`; live demo of the
-  cost guardrail.
 - **CR-mediated secret management** — `payload.kind=secret` CRs stage
   the value in an AWS Secrets Manager pending path, bypass the AI
   entirely, await admin approval on the CR detail page. Same review
@@ -222,15 +219,11 @@ flowchart LR
   logs. The audit tab merges `llm_calls` + persisted
   `guarded_actions` events, ordered by time.
 - **Per-service HTTPRoute (canonical Gateway API)** — every helm release
-  renders its own HTTPRoute. Only the upstream Gateway (`alb-public-shared`
-  in `gateway-system`) is shared. The chart supports a route-only mode for
-  the bridge case (see `platform-apps/chat-route/`); standard service
-  releases render Deployment + Service + HTTPRoute as before.
-- **Host-scoped Next.js middleware** — `src/middleware.ts` gates
-  `chat.ssp.mightybee.dev` to `/chat`, `/api/chat`, `/api/auth`, and
-  static assets; everything else returns 404. Prevents the chat host
-  from serving the admin portal — the proper fix is the Ring-3 chat-as-
-  tenant migration; this is the interim guard.
+  of the shared chart renders its own HTTPRoute. Only the upstream
+  Gateway (`alb-public-shared` in `gateway-system`) is shared. Chart
+  toggles support the rare route-only release (no Deployment / Service,
+  backendRef points at another release's Service) but the standard
+  case is full Deployment + Service + HTTPRoute per service.
 - **Desired-spec shadow column** (`services.desired_spec`) — populated
   on every CR → applied; rendered on AI settings tab. Foundation for
   the Ring-3 controller flip.

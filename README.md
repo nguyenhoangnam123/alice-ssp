@@ -9,9 +9,13 @@ ArgoCD reconciles into EKS.
 | Live | URL |
 | --- | --- |
 | Portal | https://portal.ssp.mightybee.dev |
-| Example deployed service | https://api.ssp.mightybee.dev (HTTP 200, nginx) |
 | GitOps repo | https://github.com/nguyenhoangnam123/alice-ssp |
-| Most-recent AI-generated PR | https://github.com/nguyenhoangnam123/alice-ssp/pull/17 |
+
+The cluster is intentionally idle right now — slate cleared so the demo can
+showcase the full CR onboarding cycle. Sign in to the portal, click **Request
+changes** (or *New service* at `/dashboard/services/new`) to walk through:
+service form → policy gate → AI validation → PR → human review → merge →
+ArgoCD reconcile → live URL.
 
 ## How to run / explore
 
@@ -20,33 +24,34 @@ The platform is **already running** in the user's AWS account
 high-signal artifacts:
 
 ```sh
-# 1. Chat (the demo workload — Cognito-gated, metered Bedrock per message)
-open https://chat.ssp.mightybee.dev/chat/login
-#    user: namnh21894@gmail.com
-#    pass: ChatDemo!2026
+# 1. Open the portal — sign in (stub auth in MVP1)
+open https://portal.ssp.mightybee.dev
 
-# 2. Admin portal — see the chat service detail page with the usage widget
-open https://portal.ssp.mightybee.dev/dashboard/services/01KTC00CHATSV00000000000001
+# 2. Onboard a new service via the form — exercises the full CR pipeline
+#    /dashboard/services/new → submit → AI generates artifacts → PR opens
+#    → review + merge → ArgoCD reconciles → live URL
 
-# 3. The most recent AI-generated PR
-open https://github.com/nguyenhoangnam123/alice-ssp/pull/17
-
-# 4. Run the observability MCP server locally (no AWS needed)
+# 3. Run the observability MCP server locally (no AWS needed)
 cd mcp-server
 npm install
 npm run toy      # orchestrator-side: spans + llm_call + guarded_action
 npm run tenant   # tenant-side: check_budget → simulate Bedrock → record_llm_call
                  # (requires SSP_PORTAL_API + SSP_INTERNAL_TOKEN env)
+
+# 4. Adversarial sweep against the live portal — proves the guardrails
+./tests/fuzz-guardrails.sh
 ```
 
-Every chat message exercises the **full guardrail stack**: Cognito sign-in →
-`checkBudget(tenantId)` → `meteredBedrockInvoke()` → Bedrock → `INSERT
-llm_calls` → CW EMF emit → span close. Drop `tenants.bedrock_monthly_cap_usd`
-to `0.01` and the next send returns HTTP 402 with the platform's refusal
-reason; Bedrock is never called.
+Every CR exercises the **full guardrail stack**: policy gate (incl. injection
++ PII scanners) → per-tenant budget guard (`checkBudget(tenantId)`) →
+`meteredBedrockInvoke()` → output YAML re-validation → PR. Drop
+`tenants.bedrock_monthly_cap_usd` to `0.01` and the next CR's AI step is
+refused at the budget guard with `guarded_action('bedrock.budget_exceeded')`;
+Bedrock is never called.
 
 ### What you'll see in the UI
 
+Once at least one service is onboarded:
 - **Service detail page** is tabbed: Versions (revisions + CRs) / AI settings
   (Bedrock usage widget + Desired spec panel + read-only secret keys) / MCP
   audit logs (merged `llm_calls` + `guarded_actions` events, redaction
