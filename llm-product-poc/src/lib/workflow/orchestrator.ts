@@ -19,6 +19,7 @@ import {
 } from "@/lib/observability";
 import { generateArtifacts, type AgentResult } from "@/lib/ai/agent";
 import { openFleetPr } from "@/lib/github/pr";
+import { fetchCurrentArtifacts } from "@/lib/github/fetch-artifacts";
 
 /**
  * Workflow model:
@@ -161,6 +162,22 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
     attributes: { tenant_id: tenant.id, mode: process.env.AI_MODE ?? "mock" },
   });
 
+  // Fetch the current four files from the fleet repo. The AI uses them as
+  // the BASE to merge the CR into — without this, every CR regenerates from
+  // scratch and drops fields the payload doesn't mention (IRSA annotations,
+  // envFrom, externalSecrets, etc.). PR #22 was the canonical incident.
+  // Failures are non-fatal: helper returns all-null and the AI falls back
+  // to its from-scratch path.
+  const currentArtifacts = await fetchCurrentArtifacts({
+    tenant,
+    service: svc,
+  }).catch((err) => {
+    console.warn(
+      `[orchestrator] fetchCurrentArtifacts failed; falling back to from-scratch generation: ${String(err)}`,
+    );
+    return undefined;
+  });
+
   let result: AgentResult;
   try {
     result = await generateArtifacts({
@@ -168,6 +185,7 @@ export async function processChangeRequest(changeRequestId: string): Promise<{
       tenant,
       changeRequest: cr,
       currentStateSummary: "(initial submission)",
+      currentArtifacts,
       parentSpanId: aiSpanId,
     });
     endSpan(aiSpanId, "ok", { kind: result.kind });

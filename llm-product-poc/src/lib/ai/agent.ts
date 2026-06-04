@@ -1,4 +1,5 @@
 import type { Service, Tenant, ChangeRequest } from "@/lib/db/schema";
+import type { FleetArtifactsSnapshot } from "@/lib/github/fetch-artifacts";
 import { meteredBedrockInvoke } from "@/lib/observability/metered-invoke";
 import { systemPrompt, userPrompt } from "./prompts";
 
@@ -26,6 +27,12 @@ export async function generateArtifacts(args: {
   tenant: Tenant;
   changeRequest: ChangeRequest;
   currentStateSummary?: string;
+  /**
+   * Snapshot of the four files currently in the fleet repo for this service.
+   * When present, the AI is instructed to MERGE the CR into them rather than
+   * regenerating — see prompts.ts § "MERGE, DO NOT REGENERATE".
+   */
+  currentArtifacts?: FleetArtifactsSnapshot;
   /** Optional parent span id — orchestrator opens an "ai_invoke" span and passes it. */
   parentSpanId?: string;
 }): Promise<AgentResult> {
@@ -54,6 +61,7 @@ async function bedrockArtifacts(args: {
   tenant: Tenant;
   changeRequest: ChangeRequest;
   currentStateSummary?: string;
+  currentArtifacts?: FleetArtifactsSnapshot;
   /** Span the orchestrator opened for the AI step; we nest the bedrock call under it. */
   parentSpanId?: string;
 }): Promise<AgentResult> {
