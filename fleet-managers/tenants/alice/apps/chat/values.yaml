@@ -5,27 +5,22 @@ tenant:
 
 ssp:
   serviceId: 01KT78ZPKE5JFAF17NJ5D9BJMY
-  changeRequestId: 01KT7ARHGWZ4NJN92X2M7RKN3J
-
-image:
-  repository: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal
-  tag: "f561c02187fc302ec03b0c22cb4627b9c6f38472"
-  pullPolicy: IfNotPresent
+  changeRequestId: 01KT8Z3A450C8TXKWGMHSQM9P9
 
 replicaCount: 1
 
-service:
-  port: 3000
-
-containerPort: 3000
+image:
+  repository: 339713072162.dkr.ecr.us-east-1.amazonaws.com/chat
+  tag: "${{ github.sha }}"
+  pullPolicy: IfNotPresent
 
 resources:
   requests:
-    cpu: 250m
-    memory: 256Mi
+    cpu: 256m
+    memory: 2Gi
   limits:
-    cpu: "1"
-    memory: 512Mi
+    cpu: 512m
+    memory: 2Gi
 
 route:
   enabled: true
@@ -35,87 +30,18 @@ route:
     enabled: true
     secretName: chat-tls
 
-# Tenant pod runs the SSP portal image — needs the same envs the portal does so
-# the chat code path (Cognito sign-in + DB + Bedrock + portal internal API) works.
-# This is the Option-A shortcut: chat inherits the portal's secret refs. Known
-# privilege concern documented in deliverable1-04 § Ring 3 — the proper fix is
-# Option B (chat-only image calling portal /api/internal/*) which would replace
-# these envFrom mounts with a single SSP_INTERNAL_TOKEN.
 serviceAccount:
   create: true
-  annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::195748744911:role/ssp-portal-app
+  name: chat
 
-env:
-  - name: AWS_REGION
-    value: "eu-west-1"
-  - name: BEDROCK_REGION
-    value: "eu-west-1"
-  - name: COGNITO_REGION
-    value: "eu-west-1"
-  - name: COGNITO_USER_POOL_ID
-    value: "eu-west-1_zEVRIg5JY"
-  - name: COGNITO_CLIENT_ID
-    value: "8jb16v8uff49e2vcsg7fqijl0"
-  - name: AUTH_MODE
-    value: "stub"
-  - name: AI_MODE
-    value: "bedrock"
-  - name: BEDROCK_MODEL_ID
-    value: "eu.anthropic.claude-opus-4-6-v1"
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
 
-envFrom:
-  - secretRef:
-      name: portal-db
-  - secretRef:
-      name: portal-cognito
-  - secretRef:
-      name: portal-internal-token
-
-# Sync the portal-* secrets into the tenant-alice namespace from the same SM
-# paths the ssp-portal namespace reads. The chart already supports this list.
-externalSecrets:
-  - name: portal-db
-    secretStoreRef:
-      name: aws-secretsmanager
-      kind: ClusterSecretStore
-    target:
-      name: portal-db
-      template:
-        engineVersion: v2
-        data:
-          DATABASE_URL: "{{ .url }}"
-          DB_HOST: "{{ .host }}"
-          DB_PORT: "{{ .port }}"
-          DB_USER: "{{ .username }}"
-          DB_PASSWORD: "{{ .password }}"
-          DB_NAME: "{{ .database }}"
-    dataFrom:
-      - extract:
-          key: ssp/portal/db
-  - name: portal-cognito
-    secretStoreRef:
-      name: aws-secretsmanager
-      kind: ClusterSecretStore
-    target:
-      name: portal-cognito
-      template:
-        engineVersion: v2
-        data:
-          COGNITO_CLIENT_SECRET: "{{ .client_secret }}"
-    dataFrom:
-      - extract:
-          key: ssp/portal/cognito
-  - name: portal-internal-token
-    secretStoreRef:
-      name: aws-secretsmanager
-      kind: ClusterSecretStore
-    target:
-      name: portal-internal-token
-      template:
-        engineVersion: v2
-        data:
-          SSP_INTERNAL_TOKEN: "{{ .token }}"
-    dataFrom:
-      - extract:
-          key: ssp/portal/internal-token
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL

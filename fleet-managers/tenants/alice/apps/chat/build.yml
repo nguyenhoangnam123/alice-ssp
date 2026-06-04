@@ -1,40 +1,35 @@
-name: Build and Push chat
+name: Build and Push Chat Service
 on:
   push:
     branches: [main]
     paths:
-      - 'apps/chat/**'
-      - '.github/workflows/build-chat.yml'
+      - 'services/chat/**'
 
 permissions:
   id-token: write
   contents: read
 
-env:
-  ECR_REPO: 195748744911.dkr.ecr.eu-west-1.amazonaws.com/ssp-portal
-  AWS_REGION: eu-west-1
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (OIDC)
+      - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::195748744911:role/github-actions-ecr-push
-          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/github-actions-ecr-push
+          aws-region: us-east-1
 
       - name: Login to Amazon ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: |
-            ${{ env.ECR_REPO }}:${{ github.sha }}
-            ${{ env.ECR_REPO }}:latest
+      - name: Build and push image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/chat:$IMAGE_TAG -f services/chat/Dockerfile services/chat
+          docker push $ECR_REGISTRY/chat:$IMAGE_TAG
