@@ -44,7 +44,13 @@ route:
 serviceAccount:
   create: true
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::195748744911:role/ssp-portal-app
+    # Dedicated chat IRSA role — trust policy locked to
+    # system:serviceaccount:tenant-alice:alice-chat-app (NOT the portal SA).
+    # Permissions: bedrock:InvokeModel on Claude + kms:Decrypt via Secrets
+    # Manager (for portal-db / portal-cognito / portal-internal-token).
+    # No SM write, no DB IAM. Provisioned by
+    # fleet-managers/terraform/tenants/alice/chat-iam.tf.
+    eks.amazonaws.com/role-arn: arn:aws:iam::195748744911:role/ssp-tenant-alice-chat
 
 env:
   - name: AWS_REGION
