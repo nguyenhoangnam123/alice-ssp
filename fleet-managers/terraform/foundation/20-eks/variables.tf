@@ -17,7 +17,14 @@ variable "cluster_name" {
 
 variable "cluster_version" {
   type    = string
-  default = "1.30"
+  # Bumped from 1.30 → 1.34 to exit Extended Support pricing (~$0.50/hour
+  # surcharge on 1.30, which was ~$360/month). 1.34 stays on standard
+  # support until ~Oct 2026 (gives ~4 months runway). Done as four
+  # sequential terraform-apply hops (1.30→1.31→1.32→1.33→1.34) because
+  # EKS forbids minor-version skipping. The terraform-aws-modules/eks
+  # module auto-bumps cluster_addons + the managed node group when this
+  # value changes.
+  default = "1.34"
 }
 
 variable "cluster_endpoint_public_access" {
