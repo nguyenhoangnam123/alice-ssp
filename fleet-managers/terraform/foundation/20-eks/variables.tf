@@ -40,7 +40,11 @@ variable "node_instance_types" {
 
 variable "node_min_size" {
   type    = number
-  default = 2
+  # Single-node evaluation environment. Saves ~$30/mo vs. min=2 but loses
+  # HA — any node failure or AMI rotation is full-outage downtime until a
+  # replacement node joins. Keep max=6 so the next EKS upgrade can still
+  # surge during rolling node replacement.
+  default = 1
 }
 
 variable "node_max_size" {
@@ -50,7 +54,7 @@ variable "node_max_size" {
 
 variable "node_desired_size" {
   type    = number
-  default = 2
+  default = 1
 }
 
 variable "default_tags" {

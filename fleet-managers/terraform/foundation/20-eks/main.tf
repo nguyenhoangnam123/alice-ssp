@@ -51,9 +51,22 @@ module "eks" {
   cloudwatch_log_group_retention_in_days = 1
 
   cluster_addons = {
-    coredns                = {}
-    kube-proxy             = {}
-    vpc-cni                = {}
+    coredns    = {}
+    kube-proxy = {}
+    # Prefix Delegation: each ENI carries a /28 prefix (16 IPs) instead of
+    # single IPs, raising t3.medium's pod density from ~17 to ~58. Without
+    # this, a single-node cluster (see variables.node_desired_size=1) can't
+    # host ArgoCD + cert-manager + external-secrets + kube-system addons +
+    # the platform apps. Coupled with the kubelet max-pods=58 set on the
+    # managed node group below.
+    vpc-cni = {
+      configuration_values = jsonencode({
+        env = {
+          ENABLE_PREFIX_DELEGATION = "true"
+          WARM_PREFIX_TARGET       = "1"
+        }
+      })
+    }
     eks-pod-identity-agent = {} # modern alternative to IRSA — both supported in parallel
     # aws-ebs-csi-driver intentionally omitted in MVP1: nothing in the cluster requests EBS
     # PVCs (portal uses RDS, ArgoCD/ESO/cert-manager are stateless). Re-enable in MVP2 with
@@ -75,6 +88,25 @@ module "eks" {
       labels = {
         "ssp.platform/pool" = "default"
       }
+
+      # Raise kubelet max-pods so prefix delegation actually helps. Without
+      # this override the kubelet caps at the instance-default (17 for
+      # t3.medium), which is the bottleneck on a 1-node cluster. AL2023
+      # uses nodeadm config — passing the NodeConfig as a pre-nodeadm
+      # cloud-init document is the supported pattern.
+      cloudinit_pre_nodeadm = [
+        {
+          content_type = "application/node.eks.aws"
+          content      = <<-EOT
+            apiVersion: node.eks.aws/v1alpha1
+            kind: NodeConfig
+            spec:
+              kubelet:
+                config:
+                  maxPods: 58
+          EOT
+        }
+      ]
     }
   }
 
